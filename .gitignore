@@ -1,0 +1,14 @@
+# Lua bytecode
+*.luac
+
+# Temporary files created by connmgr (auto-cleaned, but just in case)
+*.sql.tmp
+*.json.tmp
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+*.swp
+*.swo
