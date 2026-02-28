@@ -9,6 +9,7 @@ local M = {}
 ---Uses /nolog (no DB required) and -S (silent, no banner).
 ---@param commands string[]
 ---@return string output  raw stdout
+---@return integer code   exit code
 local function run(commands)
   local cfg = require("ora.config").values
   local script = vim.fn.tempname() .. ".sql"
@@ -19,19 +20,24 @@ local function run(commands)
   f:write("exit\n")
   f:close()
 
-  local out = vim.fn.system(
-    string.format("%s /nolog -S @%s", cfg.sqlcl_path, vim.fn.shellescape(script))
-  )
+  local Job = require("plenary.job")
+  local job = Job:new({
+    command          = cfg.sqlcl_path,
+    args             = { "/nolog", "-S", "@" .. script },
+    enable_recording = true,
+  })
+  local lines, code = job:sync(30000)
   os.remove(script)
-  return out or ""
+  return table.concat(lines or {}, "\n"), code or 0
 end
 
----Strip ANSI escape codes, leading "SQL> " prompts, and surrounding whitespace.
+---Strip ANSI escape codes, UTF-8 box-drawing tree chars, "SQL> " prompts, and whitespace.
 ---@param line string
 ---@return string
 local function clean(line)
   return (line
-    :gsub("\27%[[%d;]*[mABCDHJKSTfilhsu]", "")   -- ANSI codes
+    :gsub("\27%[[%d;]*[mABCDHJKSTfilhsu]", "")   -- ANSI escape codes
+    :gsub("[^\1-\127]", "")                        -- non-ASCII bytes (UTF-8 box-drawing: └──)
     :gsub("^SQL>%s*", "")                          -- SQL> prompt prefix
     :match("^%s*(.-)%s*$"))                        -- trim
 end
@@ -41,17 +47,20 @@ end
 ---Return all connection names stored in the SQLcl connection manager.
 ---@return string[]
 function M.list()
-  local out = run({ "connmgr list" })
+  local out = (run({ "connmgr list" }))
   local names = {}
   for line in out:gmatch("[^\n\r]+") do
     line = clean(line)
     -- Skip empty lines and known non-name output lines
     if  line ~= ""
-    and not line:match("^%-%-")           -- separators
-    and not line:match("^=+")
+    and not line:match("^%-%-")           -- SQL-style separators
+    and not line:match("^=+")            -- banner separators
+    and not line:match(":$")             -- category headers like "Oracle:"
     and not line:match("^Connecting")
     and not line:match("^SQLcl")
     and not line:match("^Oracle")
+    and not line:match("^Copyright")
+    and not line:match("^All%s")         -- "All Connections:" etc.
     then
       table.insert(names, line)
     end
@@ -63,7 +72,7 @@ end
 ---@param name string
 ---@return {connect_string: string, user: string}|nil
 function M.show(name)
-  local out = run({ "connmgr show " .. vim.fn.shellescape(name) })
+  local out = (run({ "connmgr show " .. vim.fn.shellescape(name) }))
   local info = {}
   for line in out:gmatch("[^\n\r]+") do
     line = clean(line)
@@ -123,11 +132,11 @@ function M.add(name, url)
   f:write(json)
   f:close()
 
-  local out = run({ "connmgr import " .. vim.fn.shellescape(tmpjson) })
+  local out, code = run({ "connmgr import " .. vim.fn.shellescape(tmpjson) })
   os.remove(tmpjson)
 
-  if vim.v.shell_error ~= 0 or out:match("[Ee]rror") or out:match("[Ff]ailed") then
-    return false, vim.trim(out ~= "" and out or ("exit code " .. vim.v.shell_error))
+  if code ~= 0 or out:match("[Ee]rror") or out:match("[Ff]ailed") then
+    return false, vim.trim(out ~= "" and out or ("exit code " .. tostring(code)))
   end
   return true
 end

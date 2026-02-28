@@ -6,6 +6,8 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 
 - Neovim ≥ 0.9
 - [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) installed and accessible
+- [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
+- [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
 
 ## Installation
 
@@ -14,13 +16,13 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 ```lua
 {
   "yourname/nvim-ora",
+  dependencies = {
+    "MunifTanjim/nui.nvim",
+    "nvim-lua/plenary.nvim",
+  },
   config = function()
     require("ora").setup({
       sqlcl_path = "/opt/oracle/sqlcl/bin/sql",
-      connections = {
-        { name = "local-xe", url = "scott/tiger@localhost:1521/XEPDB1" },
-        { name = "staging",  url = "app/pass@staging:1521/STGDB" },
-      },
     })
   end,
 }
@@ -31,6 +33,10 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 ```lua
 use {
   "yourname/nvim-ora",
+  requires = {
+    "MunifTanjim/nui.nvim",
+    "nvim-lua/plenary.nvim",
+  },
   config = function()
     require("ora").setup({ ... })
   end,
@@ -46,24 +52,14 @@ require("ora").setup({
   -- On Linux:               "/opt/oracle/sqlcl/bin/sql"
   sqlcl_path = "sql",   -- default: "sql" (assumes it is on $PATH)
 
-  -- Named connections shown in the picker.
-  connections = {
-    {
-      name = "local-xe",
-      url  = "user/password@host:port/service_name",
-    },
-    -- TNS alias (no password stored – sqlcl will prompt):
-    {
-      name = "prod-tns",
-      url  = "/@prod_tns_alias",
-    },
-  },
-
   -- Picker window dimensions (optional).
   win_width  = 60,
   win_height = 20,
 })
 ```
+
+Named connections are managed through SQLcl's built-in connection manager (`connmgr`).
+Use `:OraAddConnection` to add them — no hardcoded credentials in your config.
 
 ### Connection URL formats
 
@@ -86,15 +82,18 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | `:OraConnectionsList` | List saved connections (from SQLcl connmgr) and connect |
 | `:OraConnect <url>` | Connect directly with a connection string |
 | `:OraAddConnection [name url]` | Add a new named connection to SQLcl connmgr |
+| `:OraWorksheetNew` | Create a new SQL worksheet buffer |
+| `:OraWorksheetsList` | List all open worksheets |
+| `:OraWorksheetExecute` | Execute the current worksheet and show results in a split |
 
-### Picker keymaps
+### Connection picker keymaps
 
 | Key | Action |
 |-----|--------|
 | `j` / `↓` | Move cursor down |
 | `k` / `↑` | Move cursor up |
 | `<CR>` | Connect to selected entry |
-| `s` | Connect with a connection string (one-off) |
+| `s` | Connect with a one-off connection string |
 | `a` | Add a new named connection to connmgr |
 | `q` / `<Esc>` | Close picker |
 
@@ -109,6 +108,15 @@ require("ora").connect("scott/tiger@localhost:1521/XEPDB1")
 
 -- Add a named connection to connmgr
 require("ora").add_connection("dev", "system/oracle@localhost:1521/FREEPDB1")
+
+-- Create a new SQL worksheet
+require("ora").new_worksheet()
+
+-- List open worksheets
+require("ora").list_worksheets()
+
+-- Execute the current worksheet
+require("ora").execute_worksheet()
 ```
 
 ## Local development
@@ -123,18 +131,7 @@ Clone the repo anywhere and point your plugin manager at the local path instead 
   config = function()
     require("ora").setup({
       sqlcl_path = "/opt/oracle/sqlcl/bin/sql",
-          })
-  end,
-}
-```
-
-### packer.nvim
-
-```lua
-use {
-  "/path/to/nvim-ora-dev",
-  config = function()
-    require("ora").setup({ ... })
+    })
   end,
 }
 ```
@@ -160,12 +157,13 @@ make dev
 nvim -u dev/init.lua
 ```
 
-Then run `:OraConnectionsList` to open the connection picker.
+Then run `:OraConnectionsList` to open the connection picker, or `:OraWorksheetNew` to open a SQL worksheet.
 
 ### Running automated tests
 
-Tests require [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) to be installed
-in your Neovim environment (e.g. via lazy.nvim). Then from the repo root:
+Tests require [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) and
+[nui.nvim](https://github.com/MunifTanjim/nui.nvim) to be installed in your Neovim
+environment (e.g. via lazy.nvim). Then from the repo root:
 
 ```bash
 make test                                        # all specs
@@ -173,6 +171,8 @@ make test-file FILE=spec/ora/config_spec.lua     # single file
 ```
 
 ## How it works
+
+### Connections
 
 When you select a connection, nvim-ora opens a `:terminal` split running:
 
@@ -183,3 +183,11 @@ sqlcl <url>
 SQLcl handles all authentication, including password prompts and wallet-based mTLS connections. The terminal buffer is named `ora://<connection-name>` for easy identification.
 
 If you select the same connection a second time, nvim-ora jumps to the existing terminal instead of opening a new one.
+
+### Worksheets
+
+`:OraWorksheetNew` opens a new buffer with `plsql` filetype. When you run `:OraWorksheetExecute`, nvim-ora:
+
+1. Prompts you to pick a connection (if the worksheet has none yet).
+2. Runs the SQL via SQLcl and captures the output as JSON.
+3. Formats the result as an ASCII table in a `belowright` split buffer.

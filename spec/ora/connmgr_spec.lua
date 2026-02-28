@@ -1,58 +1,67 @@
 -- Tests for ora.connmgr.
--- vim.fn.system is stubbed so no real sqlcl process is launched.
+-- plenary.job is stubbed so no real sqlcl process is launched.
 
 local function fresh()
   package.loaded["ora.connmgr"] = nil
   package.loaded["ora.config"]  = nil
+  -- Note: do NOT clear plenary.job here; tests set the stub before calling fresh()
+  -- so the stub is in place when connmgr's run() calls require("plenary.job").
   require("ora.config").setup({ sqlcl_path = "/usr/bin/sql" })
   return require("ora.connmgr")
 end
 
+---Stub plenary.job so that job:sync() returns (lines_table, code).
+---Returns a controller table with the captured Job opts.
+local function stub_job_sync(mock_output, mock_code)
+  local ctrl = {}
+  package.loaded["plenary.job"] = {
+    new = function(_, opts)
+      ctrl.opts = opts
+      return {
+        sync = function(_)
+          return vim.split(mock_output or "", "\n"), mock_code or 0
+        end,
+      }
+    end,
+  }
+  return ctrl
+end
+
 describe("ora.connmgr", function()
-  local orig_system
-
-  before_each(function()
-    orig_system = vim.fn.system
-  end)
-
   after_each(function()
-    vim.fn.system = orig_system
-    -- Note: vim.v.shell_error is read-only; it resets automatically
-    -- after the next vim.fn.system() call.
+    package.loaded["plenary.job"] = nil
   end)
 
   -- ─── list() ───────────────────────────────────────────────────────────────
 
   describe("list()", function()
     it("returns an empty list when output is empty", function()
-      vim.fn.system = function(_) return "" end
+      stub_job_sync("")
       assert.same({}, fresh().list())
     end)
 
     it("parses one connection per line", function()
-      vim.fn.system = function(_) return "dev\nstaging\nprod\n" end
+      stub_job_sync("dev\nstaging\nprod")
       assert.same({ "dev", "staging", "prod" }, fresh().list())
     end)
 
     it("strips ANSI escape codes", function()
-      vim.fn.system = function(_) return "\27[1mdev\27[0m\nstaging\n" end
+      stub_job_sync("\27[1mdev\27[0m\nstaging")
       assert.same({ "dev", "staging" }, fresh().list())
     end)
 
     it("strips leading SQL> prompts", function()
-      vim.fn.system = function(_) return "SQL> dev\nSQL> staging\n" end
+      stub_job_sync("SQL> dev\nSQL> staging")
       assert.same({ "dev", "staging" }, fresh().list())
     end)
 
     it("skips blank lines", function()
-      vim.fn.system = function(_) return "\ndev\n\nstaging\n\n" end
+      stub_job_sync("\ndev\n\nstaging\n")
       assert.same({ "dev", "staging" }, fresh().list())
     end)
 
     it("skips SQLcl and Oracle banner lines", function()
-      vim.fn.system = function(_)
-        return "SQLcl: Release 25.2\nOracle 19c\ndev\nstaging\n"
-      end
+      stub_job_sync("SQLcl: Release 25.2\nOracle 19c\ndev\nstaging")
       assert.same({ "dev", "staging" }, fresh().list())
     end)
   end)
@@ -61,14 +70,12 @@ describe("ora.connmgr", function()
 
   describe("show()", function()
     it("parses Connect String and User", function()
-      vim.fn.system = function(_)
-        return table.concat({
-          "Name: local-free",
-          "Connect String: localhost:1521/FREEPDB1",
-          "User: system",
-          "Password: not saved",
-        }, "\n") .. "\n"
-      end
+      stub_job_sync(table.concat({
+        "Name: local-free",
+        "Connect String: localhost:1521/FREEPDB1",
+        "User: system",
+        "Password: not saved",
+      }, "\n"))
       local info = fresh().show("local-free")
       assert.is_not_nil(info)
       assert.equals("localhost:1521/FREEPDB1", info.connect_string)
@@ -76,7 +83,7 @@ describe("ora.connmgr", function()
     end)
 
     it("returns nil when output lacks required fields", function()
-      vim.fn.system = function(_) return "something unexpected\n" end
+      stub_job_sync("something unexpected")
       assert.is_nil(fresh().show("missing"))
     end)
   end)
@@ -85,20 +92,31 @@ describe("ora.connmgr", function()
 
   describe("add()", function()
     it("returns true on success", function()
-      vim.fn.system = function(_) return "" end
+      stub_job_sync("", 0)
       local ok, err = fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
       assert.is_true(ok)
       assert.is_nil(err)
     end)
 
-    it("script passed to sqlcl contains 'connmgr import <file>.json'", function()
-      local received_cmd
-      vim.fn.system = function(cmd) received_cmd = cmd; return "" end
+    it("passes sqlcl_path as command to plenary.job", function()
+      local ctrl = stub_job_sync("", 0)
       fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
+      assert.equals("/usr/bin/sql", ctrl.opts.command)
+    end)
 
-      -- run() passes a .sql script to sqlcl via @path; extract and read it
-      local script_path = received_cmd:match("@'?([^']+%.sql)'?")
-      assert.is_not_nil(script_path, "expected @script.sql in command")
+    it("passes /nolog -S @script.sql as args to plenary.job", function()
+      local ctrl = stub_job_sync("", 0)
+      fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
+      assert.equals("/nolog", ctrl.opts.args[1])
+      assert.equals("-S",     ctrl.opts.args[2])
+      assert.matches("%.sql$", ctrl.opts.args[3])
+    end)
+
+    it("script passed to sqlcl contains 'connmgr import <file>.json'", function()
+      local ctrl = stub_job_sync("", 0)
+      fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
+      -- args[3] is "@/path/to/script.sql"
+      local script_path = ctrl.opts.args[3]
       -- Script may already be deleted (os.remove called after run); check if readable
       local f = io.open(script_path, "r")
       if f then
@@ -106,41 +124,40 @@ describe("ora.connmgr", function()
         assert.matches("connmgr import", contents)
         assert.matches("%.json", contents)
       else
-        -- Script was cleaned up — verify the command at least referenced sqlcl correctly
-        assert.matches("/usr/bin/sql", received_cmd)
-        assert.matches("%.sql", received_cmd)
+        -- Script was cleaned up — verify the args referenced sqlcl correctly
+        assert.matches("/usr/bin/sql", ctrl.opts.command)
+        assert.matches("%.sql$", script_path)
       end
     end)
 
-    it("uses sqlcl_path from config", function()
-      local received_cmd
-      vim.fn.system = function(cmd) received_cmd = cmd; return "" end
-      fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
-      assert.matches("/usr/bin/sql", received_cmd)
-    end)
-
     it("accepts url without password (user@host:port/service)", function()
-      vim.fn.system = function(_) return "" end
+      stub_job_sync("", 0)
       local ok, err = fresh().add("dev", "system@localhost:1521/FREEPDB1")
       assert.is_true(ok)
       assert.is_nil(err)
     end)
 
     it("returns false for an unparseable connection string", function()
-      vim.fn.system = function(_) return "" end
+      stub_job_sync("", 0)
       local ok, err = fresh().add("bad", "not-a-valid-url")
       assert.is_false(ok)
       assert.is_string(err)
     end)
 
     it("returns false when sqlcl output contains 'Error'", function()
-      vim.fn.system = function(_) return "Error: import failed\n" end
+      stub_job_sync("Error: import failed", 0)
       local ok = fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
       assert.is_false(ok)
     end)
 
     it("returns false when sqlcl output contains 'failed'", function()
-      vim.fn.system = function(_) return "Connection failed: access denied\n" end
+      stub_job_sync("Connection failed: access denied", 0)
+      local ok = fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
+      assert.is_false(ok)
+    end)
+
+    it("returns false when exit code is non-zero", function()
+      stub_job_sync("", 1)
       local ok = fresh().add("dev", "system/oracle@localhost:1521/FREEPDB1")
       assert.is_false(ok)
     end)

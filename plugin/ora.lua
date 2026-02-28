@@ -18,6 +18,22 @@ end, {
   complete = "file",
 })
 
+vim.api.nvim_create_user_command("OraWorksheetNew", function()
+  require("ora").new_worksheet()
+end, { desc = "Create a new SQL worksheet and pick a connection" })
+
+vim.api.nvim_create_user_command("OraWorksheetsList", function()
+  require("ora").list_worksheets()
+end, { desc = "List open worksheets" })
+
+vim.api.nvim_create_user_command("OraWorksheetExecute", function()
+  require("ora").execute_worksheet()
+end, { desc = "Execute the current worksheet buffer against its connection" })
+
+vim.api.nvim_create_user_command("OraWorksheetResult", function()
+  require("ora").worksheet_result()
+end, { desc = "Run worksheet SQL and show result as a table in a split buffer" })
+
 vim.api.nvim_create_user_command("OraAddConnection", function(opts)
   -- Accept optional "name url" as a single arg string, or drop into UI
   local args = vim.trim(opts.args)

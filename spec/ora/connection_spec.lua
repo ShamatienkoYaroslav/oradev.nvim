@@ -90,55 +90,28 @@ describe("ora.connection", function()
   end)
 
   describe("connect() — named connmgr connection (is_named=true)", function()
-    it("starts sqlcl with /nolog instead of the connection string", function()
+    it("passes -name <conn> to sqlcl", function()
       local got_cmd
       vim.fn.termopen = function(cmd, _) got_cmd = cmd; return 1 end
       fresh_connection().connect("my-conn", "my-conn", { is_named = true })
-      assert.matches("/nolog", got_cmd)
-      -- must NOT contain the bare name as a direct argument
-      assert.is_falsy(got_cmd:match("/usr/bin/sql my%-conn$"))
+      assert.matches("-name", got_cmd)
+      assert.matches("my%-conn", got_cmd)
     end)
 
-    it("creates a startup script file that is passed to sqlcl", function()
-      local got_cmd
-      vim.fn.termopen = function(cmd, _) got_cmd = cmd; return 1 end
-      fresh_connection().connect("my-conn", "my-conn", { is_named = true })
-      -- The command must reference a .sql startup script
-      assert.matches("%.sql", got_cmd)
-    end)
-
-    it("startup script contains 'connect @<name>'", function()
+    it("does NOT use /nolog or a startup script", function()
       local got_cmd
       vim.fn.termopen = function(cmd, _) got_cmd = cmd; return 1 end
       fresh_connection().connect("dev", "dev", { is_named = true })
-
-      -- Extract the script path from the command and read it
-      local script_path = got_cmd:match("@(.+%.sql)")
-      assert.is_not_nil(script_path, "expected @script.sql in command")
-      -- Note: file may be cleaned up by on_exit; check before that
-      local f = io.open(script_path, "r")
-      if f then
-        local contents = f:read("*a")
-        f:close()
-        assert.matches("connect @dev", contents)
-      end
+      assert.is_falsy(got_cmd:match("/nolog"))
+      assert.is_falsy(got_cmd:match("%.sql"))
     end)
 
-    it("cleans up the startup script on exit", function()
-      local captured_opts
-      local script_path
-      vim.fn.termopen = function(cmd, opts)
-        captured_opts = opts
-        script_path = cmd:match("@(.+%.sql)")
-        return 1
-      end
-
+    it("uses sqlcl_path from config with -name flag", function()
+      setup_config({ sqlcl_path = "/custom/sql" })
+      local got_cmd
+      vim.fn.termopen = function(cmd, _) got_cmd = cmd; return 1 end
       fresh_connection().connect("dev", "dev", { is_named = true })
-      captured_opts.on_exit()
-
-      if script_path then
-        assert.is_nil(io.open(script_path, "r"), "startup script should be removed after exit")
-      end
+      assert.matches("^/custom/sql %-name", got_cmd)
     end)
   end)
 

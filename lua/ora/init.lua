@@ -2,6 +2,7 @@ local M = {}
 
 local _setup_done = false
 
+
 ---Configure the plugin. Must be called before any other ora function.
 ---
 ---@param user_config OraConfig
@@ -12,6 +13,7 @@ local _setup_done = false
 ---  })
 function M.setup(user_config)
   require("ora.config").setup(user_config)
+  vim.filetype.add({ pattern = { ["ora://worksheet%-.*"] = "plsql" } })
   _setup_done = true
 end
 
@@ -32,6 +34,75 @@ function M.connect(url)
     return
   end
   require("ora.connection").connect(url, url)
+end
+
+---Create a new SQL worksheet buffer (no connection prompt).
+---The connection can be chosen later when executing the worksheet.
+function M.new_worksheet()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+
+  local ws = require("ora.worksheet").create()
+  local ws_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(ws_win, ws.bufnr)
+end
+
+---List all open worksheets in a floating picker.
+function M.list_worksheets()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+  require("ora.ui.worksheets_picker").open()
+end
+
+---Execute the current worksheet SQL and show the result as a formatted table
+---in a split below the worksheet. If the buffer has no connection the
+---connection picker is shown first.
+function M.execute_worksheet()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+
+  local bufnr   = vim.api.nvim_get_current_buf()
+  local ws_mod  = require("ora.worksheet")
+  local ws      = ws_mod.find(bufnr) or ws_mod.register(bufnr)
+
+  local function do_run()
+    local result = require("ora.result")
+    local rbuf = result.get_or_create_buf(ws)
+    result.set_buf_lines(rbuf, { "-- running…" })
+    result.show(rbuf)
+    result.run(ws, function(lines, hl_data, err)
+      if err then
+        result.set_buf_lines(rbuf, { "-- ERROR: " .. err })
+        return
+      end
+      local sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
+      result.push_history(ws, sql, lines)
+      result.set_buf_content(rbuf, lines, hl_data)
+    end)
+  end
+
+  if ws.connection then
+    do_run()
+  else
+    require("ora.ui.picker").select(function(conn)
+      if not conn then return end
+      ws.connection = conn
+      ws_mod.refresh_winbar(ws)
+      do_run()
+    end)
+  end
+end
+
+---Run the current worksheet SQL and show the result as a formatted table.
+---Alias for execute_worksheet().
+function M.worksheet_result()
+  M.execute_worksheet()
 end
 
 ---Add a new named connection to the SQLcl connection manager.
