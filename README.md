@@ -1,4 +1,4 @@
-# nvim-ora
+# oradev.nvim
 
 A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) for working with Oracle databases.
 
