@@ -61,6 +61,7 @@ function M.list()
     and not line:match("^Oracle")
     and not line:match("^Copyright")
     and not line:match("^All%s")         -- "All Connections:" etc.
+    and line ~= "."                        -- connmgr artifact
     then
       table.insert(names, line)
     end

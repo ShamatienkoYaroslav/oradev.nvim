@@ -8,6 +8,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 - [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) installed and accessible
 - [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
+- [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for the schema explorer)
 
 ## Installation
 
@@ -19,26 +20,32 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
   dependencies = {
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
+    "nvim-neo-tree/neo-tree.nvim", -- optional, for :OraExplorer
   },
   config = function()
     require("ora").setup({
       sqlcl_path = "/opt/oracle/sqlcl/bin/sql",
     })
-  end,
-}
-```
 
-### packer.nvim
-
-```lua
-use {
-  "yourname/nvim-ora",
-  requires = {
-    "MunifTanjim/nui.nvim",
-    "nvim-lua/plenary.nvim",
-  },
-  config = function()
-    require("ora").setup({ ... })
+    -- Register the "ora" source with neo-tree (required for :OraExplorer)
+    require("neo-tree").setup({
+      sources = {
+        "filesystem",
+        "ora",
+      },
+      ora = {
+        window = {
+          mappings = {
+            ["<cr>"] = "toggle_node",
+            ["l"]    = "expand_node",
+            ["h"]    = "collapse_node",
+            ["r"]    = "refresh",
+            ["a"]    = "add_connection",
+            ["e"]    = "open_object",
+          },
+        },
+      },
+    })
   end,
 }
 ```
@@ -73,20 +80,105 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | Wallet (mTLS) | `/@mydb_high?TNS_ADMIN=/path/to/wallet` |
 | Prompt password | `scott@localhost:1521/XEPDB1` |
 
-## Usage
+## Commands
 
-### Commands
+### Connections
 
 | Command | Description |
 |---------|-------------|
 | `:OraConnectionsList` | List saved connections (from SQLcl connmgr) and connect |
 | `:OraConnect <url>` | Connect directly with a connection string |
 | `:OraAddConnection [name url]` | Add a new named connection to SQLcl connmgr |
+
+### Worksheets
+
+| Command | Description |
+|---------|-------------|
 | `:OraWorksheetNew` | Create a new SQL worksheet buffer |
 | `:OraWorksheetsList` | List all open worksheets |
 | `:OraWorksheetExecute` | Execute the current worksheet and show results in a split |
+| `:OraWorksheetFormat` | Format the current worksheet SQL using SQLcl's built-in formatter |
+| `:OraWorksheetChangeConnection` | Change the connection for the current worksheet |
 
-### Connection picker keymaps
+### Explorer
+
+| Command | Description |
+|---------|-------------|
+| `:OraExplorer` | Open the schema explorer sidebar (requires neo-tree) |
+
+## Schema Explorer
+
+The schema explorer (`:OraExplorer`) provides a tree sidebar for browsing Oracle schema objects. It requires [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) and must be registered as a neo-tree source (see Installation above).
+
+### Explorer keymaps
+
+| Key | Action |
+|-----|--------|
+| `<CR>` | Toggle node: connect, expand/collapse, or open source |
+| `l` | Expand node |
+| `h` | Collapse node (or jump to parent) |
+| `e` | Open object (see below) |
+| `r` | Refresh: re-fetch children on the current node, or refresh connection list |
+| `a` | Add a new named connection |
+
+### Opening objects with `e`
+
+| Node type | Behavior |
+|-----------|----------|
+| Package | Prompts to choose between Specification and Body, then opens the source |
+| Table | Prompts to choose between DDL and Data, then opens a worksheet |
+| Function | Opens the function body source |
+| Procedure | Opens the procedure body source |
+
+Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
+
+### Supported object types
+
+| Object type | Features |
+|-------------|----------|
+| **Tables** | Columns (with data type), indexes, constraints, table comment, column comments |
+| **Functions** | Parameters (with data type), return type, body source |
+| **Procedures** | Parameters (with data type), body source |
+| **Packages** | Specification source, body source (shown only if exists), subprograms with parameters and return types |
+
+### Tree structure
+
+```
+CONNECTIONS
+├── 󰆼 my_dev_db
+│   ├── 󰉋 Tables (3)
+│   │   ├── 󰓫 EMPLOYEES  Employee records
+│   │   │   ├── 󰈮 DDL
+│   │   │   ├── 󰈮 Data
+│   │   │   ├── 󰠵 EMPLOYEE_ID  NUMBER
+│   │   │   ├── 󰠵 FIRST_NAME   VARCHAR2  First name of the employee
+│   │   │   ├── 󰌹 EMP_NAME_IDX
+│   │   │   └── 󰌆 EMP_PK
+│   │   └── ...
+│   ├── 󰉋 Functions (2)
+│   │   ├── 󰊕 GET_SALARY  NUMBER
+│   │   │   ├── 󰈮 Body
+│   │   │   └── 󰆧 P_EMP_ID  NUMBER
+│   │   └── ...
+│   ├── 󰉋 Procedures (1)
+│   │   ├── 󰡱 UPDATE_SALARY
+│   │   │   ├── 󰈮 Body
+│   │   │   ├── 󰆧 P_EMP_ID  NUMBER
+│   │   │   └── 󰆧 P_AMOUNT  NUMBER
+│   │   └── ...
+│   └── 󰉋 Packages (1)
+│       └── 󰏗 HR_PKG
+│           ├── 󰈮 Specification
+│           ├── 󰈮 Body
+│           ├── 󰊕 GET_EMPLOYEE  VARCHAR2
+│           │   └── 󰆧 P_ID  NUMBER
+│           └── 󰡱 SET_SALARY
+│               ├── 󰆧 P_ID      NUMBER
+│               └── 󰆧 P_AMOUNT  NUMBER
+└── 󰆼 my_prod_db
+```
+
+## Connection picker keymaps
 
 | Key | Action |
 |-----|--------|
@@ -97,7 +189,7 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | `a` | Add a new named connection to connmgr |
 | `q` / `<Esc>` | Close picker |
 
-### Lua API
+## Lua API
 
 ```lua
 -- List saved connections and connect
@@ -117,6 +209,15 @@ require("ora").list_worksheets()
 
 -- Execute the current worksheet
 require("ora").execute_worksheet()
+
+-- Format the current worksheet
+require("ora").format_worksheet()
+
+-- Change the worksheet connection
+require("ora").change_worksheet_connection()
+
+-- Open the schema explorer
+require("ora").explorer()
 ```
 
 ## Local development
@@ -128,6 +229,7 @@ Clone the repo anywhere and point your plugin manager at the local path instead 
 ```lua
 {
   dir = "/path/to/nvim-ora-dev",
+  dependencies = { "nvim-neo-tree/neo-tree.nvim" },
   config = function()
     require("ora").setup({
       sqlcl_path = "/opt/oracle/sqlcl/bin/sql",
@@ -147,9 +249,7 @@ require("ora").setup({ ... })
 
 ### Interactive testing
 
-`dev/init.lua` loads the plugin with a pre-configured connection to a local
-[Oracle Database Free](https://www.oracle.com/database/free/) instance
-(`system/oracle@localhost:1521/FREEPDB1`):
+`dev/init.lua` loads the plugin with a pre-configured setup:
 
 ```bash
 make dev
@@ -157,7 +257,7 @@ make dev
 nvim -u dev/init.lua
 ```
 
-Then run `:OraConnectionsList` to open the connection picker, or `:OraWorksheetNew` to open a SQL worksheet.
+Then run `:OraExplorer` to open the schema explorer, `:OraConnectionsList` to open the connection picker, or `:OraWorksheetNew` to open a SQL worksheet.
 
 ### Running automated tests
 
@@ -191,3 +291,11 @@ If you select the same connection a second time, nvim-ora jumps to the existing 
 1. Prompts you to pick a connection (if the worksheet has none yet).
 2. Runs the SQL via SQLcl and captures the output as JSON.
 3. Formats the result as an ASCII table in a `belowright` split buffer.
+
+The winbar displays the worksheet name on the left and the connection name on the right.
+
+### Schema Explorer
+
+`:OraExplorer` opens a neo-tree sidebar that lists all connections from the SQLcl connection manager. Expanding a connection fetches schema metadata asynchronously from the Oracle data dictionary (`user_tables`, `user_tab_columns`, `user_objects`, `user_source`, etc.). Loading indicators are shown while queries run.
+
+Opening objects (DDL, source code, data) creates worksheets with the connection pre-set, so you can immediately execute or edit them.

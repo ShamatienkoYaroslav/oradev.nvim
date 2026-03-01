@@ -34,6 +34,30 @@ vim.api.nvim_create_user_command("OraWorksheetResult", function()
   require("ora").worksheet_result()
 end, { desc = "Run worksheet SQL and show result as a table in a split buffer" })
 
+vim.api.nvim_create_user_command("OraWorksheetFormat", function()
+  require("ora").format_worksheet()
+end, { desc = "Format the current worksheet SQL using SQLcl" })
+
+vim.api.nvim_create_user_command("OraWorksheetChangeConnection", function()
+  require("ora").change_worksheet_connection()
+end, { desc = "Change the connection for the current worksheet" })
+
+vim.api.nvim_create_user_command("OraExplorer", function()
+  local ok = pcall(require, "neo-tree")
+  if not ok then
+    vim.notify("[ora] neo-tree.nvim is required for :OraExplorer", vim.log.levels.ERROR)
+    return
+  end
+  local ok2, err = pcall(require("neo-tree.command").execute, { source = "ora", position = "left" })
+  if not ok2 then
+    vim.notify(
+      '[ora] Failed to open explorer. Add "ora" to your neo-tree sources config:\n'
+        .. '  require("neo-tree").setup({ sources = { "filesystem", "ora" }, ora = { ... } })',
+      vim.log.levels.ERROR
+    )
+  end
+end, { desc = "Open Oracle connections/schemas explorer" })
+
 vim.api.nvim_create_user_command("OraAddConnection", function(opts)
   -- Accept optional "name url" as a single arg string, or drop into UI
   local args = vim.trim(opts.args)

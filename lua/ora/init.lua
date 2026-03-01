@@ -105,6 +105,62 @@ function M.worksheet_result()
   M.execute_worksheet()
 end
 
+---Format the current worksheet SQL using SQLcl's built-in formatter.
+function M.format_worksheet()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+
+  local bufnr  = vim.api.nvim_get_current_buf()
+  local ws_mod = require("ora.worksheet")
+  local ws     = ws_mod.find(bufnr)
+
+  if not ws then
+    vim.notify("[ora] current buffer is not a worksheet", vim.log.levels.WARN)
+    return
+  end
+
+  require("ora.format").run(ws.bufnr, function(err)
+    if err then
+      vim.notify("[ora] format failed: " .. err, vim.log.levels.ERROR)
+    end
+  end)
+end
+
+---Change the connection for the current worksheet.
+---Opens the connection picker; the selected connection replaces the current one.
+function M.change_worksheet_connection()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+
+  local bufnr  = vim.api.nvim_get_current_buf()
+  local ws_mod = require("ora.worksheet")
+  local ws     = ws_mod.find(bufnr)
+
+  if not ws then
+    vim.notify("[ora] current buffer is not a worksheet", vim.log.levels.WARN)
+    return
+  end
+
+  require("ora.ui.picker").select(function(conn)
+    if not conn then return end
+    ws.connection = conn
+    ws_mod.refresh_winbar(ws)
+  end)
+end
+
+---Open the neo-tree Oracle connections/schemas explorer.
+function M.explorer()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+  require("neo-tree.command").execute({ source = "ora", position = "left" })
+end
+
 ---Add a new named connection to the SQLcl connection manager.
 ---Prompts for a name and connection string if not provided as arguments.
 ---@param name? string  connection name

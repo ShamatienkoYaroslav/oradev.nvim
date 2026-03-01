@@ -28,21 +28,25 @@ local _counter = 0
 ---Shows the connection name, or "[no connection]" when none is set.
 ---@param ws OraWorksheet
 function M.refresh_winbar(ws)
-  local label = ws.connection and ws.connection.label or "[no connection]"
+  local conn_label = ws.connection and ws.connection.label or "[no connection]"
   -- Escape % so the string is treated as literal text by the statusline renderer.
-  local text = "  " .. label:gsub("%%", "%%%%")
+  local ws_name = ws.display_name or ws.name
+  local icon = ws.icon or "󰆼 "
+  local left  = ("  " .. icon .. ws_name):gsub("%%", "%%%%")
+  local right = (conn_label .. "  "):gsub("%%", "%%%%")
+  local text  = left .. "%=" .. right
   for _, win in ipairs(vim.fn.win_findbuf(ws.bufnr)) do
     vim.api.nvim_win_set_option(win, "winbar", text)
   end
 end
 
 ---Create and register a new worksheet buffer.
----@param opts? { connection?: OraWorksheetConn }
+---@param opts? { connection?: OraWorksheetConn, name?: string, display_name?: string, icon?: string }
 ---@return OraWorksheet
 function M.create(opts)
   opts = opts or {}
   _counter = _counter + 1
-  local name  = "worksheet-" .. _counter
+  local name  = opts.name or ("worksheet-" .. _counter)
   local bufnr = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_name(bufnr, "ora://" .. name)
   vim.api.nvim_buf_set_option(bufnr, "buftype",   "")
@@ -51,6 +55,8 @@ function M.create(opts)
   local ws = {
     bufnr          = bufnr,
     name           = name,
+    display_name   = opts.display_name,
+    icon           = opts.icon,
     connection     = opts.connection,
     result_bufnr   = nil,
     result_history = {},
