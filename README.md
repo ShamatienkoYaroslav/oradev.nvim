@@ -16,7 +16,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 
 ```lua
 {
-  "yourname/nvim-ora",
+  "ShamatienkoYaroslav/nvim-ora",
   dependencies = {
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
@@ -72,38 +72,38 @@ Use `:OraAddConnection` to add them — no hardcoded credentials in your config.
 
 nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 
-| Format | Example |
-|--------|---------|
-| user/pass@host:port/service | `scott/tiger@localhost:1521/XEPDB1` |
-| EZConnect | `scott/tiger@//myhost.example.com/orcl` |
-| TNS alias | `/@MY_TNS_ALIAS` |
-| Wallet (mTLS) | `/@mydb_high?TNS_ADMIN=/path/to/wallet` |
-| Prompt password | `scott@localhost:1521/XEPDB1` |
+| Format                      | Example                                 |
+| --------------------------- | --------------------------------------- |
+| user/pass@host:port/service | `scott/tiger@localhost:1521/XEPDB1`     |
+| EZConnect                   | `scott/tiger@//myhost.example.com/orcl` |
+| TNS alias                   | `/@MY_TNS_ALIAS`                        |
+| Wallet (mTLS)               | `/@mydb_high?TNS_ADMIN=/path/to/wallet` |
+| Prompt password             | `scott@localhost:1521/XEPDB1`           |
 
 ## Commands
 
 ### Connections
 
-| Command | Description |
-|---------|-------------|
-| `:OraConnectionsList` | List saved connections (from SQLcl connmgr) and connect |
-| `:OraConnect <url>` | Connect directly with a connection string |
-| `:OraAddConnection [name url]` | Add a new named connection to SQLcl connmgr |
+| Command                        | Description                                             |
+| ------------------------------ | ------------------------------------------------------- |
+| `:OraConnectionsList`          | List saved connections (from SQLcl connmgr) and connect |
+| `:OraConnect <url>`            | Connect directly with a connection string               |
+| `:OraAddConnection [name url]` | Add a new named connection to SQLcl connmgr             |
 
 ### Worksheets
 
-| Command | Description |
-|---------|-------------|
-| `:OraWorksheetNew` | Create a new SQL worksheet buffer |
-| `:OraWorksheetsList` | List all open worksheets |
-| `:OraWorksheetExecute` | Execute the current worksheet and show results in a split |
-| `:OraWorksheetFormat` | Format the current worksheet SQL using SQLcl's built-in formatter |
-| `:OraWorksheetChangeConnection` | Change the connection for the current worksheet |
+| Command                         | Description                                                       |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `:OraWorksheetNew`              | Create a new SQL worksheet buffer                                 |
+| `:OraWorksheetsList`            | List all open worksheets                                          |
+| `:OraWorksheetExecute`          | Execute the current worksheet and show results in a split         |
+| `:OraWorksheetFormat`           | Format the current worksheet SQL using SQLcl's built-in formatter |
+| `:OraWorksheetChangeConnection` | Change the connection for the current worksheet                   |
 
 ### Explorer
 
-| Command | Description |
-|---------|-------------|
+| Command        | Description                                          |
+| -------------- | ---------------------------------------------------- |
 | `:OraExplorer` | Open the schema explorer sidebar (requires neo-tree) |
 
 ## Schema Explorer
@@ -112,34 +112,34 @@ The schema explorer (`:OraExplorer`) provides a tree sidebar for browsing Oracle
 
 ### Explorer keymaps
 
-| Key | Action |
-|-----|--------|
-| `<CR>` | Toggle node: connect, expand/collapse, or open source |
-| `l` | Expand node |
-| `h` | Collapse node (or jump to parent) |
-| `e` | Open object (see below) |
-| `r` | Refresh: re-fetch children on the current node, or refresh connection list |
-| `a` | Add a new named connection |
+| Key    | Action                                                                     |
+| ------ | -------------------------------------------------------------------------- |
+| `<CR>` | Toggle node: connect, expand/collapse, or open source                      |
+| `l`    | Expand node                                                                |
+| `h`    | Collapse node (or jump to parent)                                          |
+| `e`    | Open object (see below)                                                    |
+| `r`    | Refresh: re-fetch children on the current node, or refresh connection list |
+| `a`    | Add a new named connection                                                 |
 
 ### Opening objects with `e`
 
-| Node type | Behavior |
-|-----------|----------|
-| Package | Prompts to choose between Specification and Body, then opens the source |
-| Table | Prompts to choose between DDL and Data, then opens a worksheet |
-| Function | Opens the function body source |
-| Procedure | Opens the procedure body source |
+| Node type | Behavior                                                                |
+| --------- | ----------------------------------------------------------------------- |
+| Package   | Prompts to choose between Specification and Body, then opens the source |
+| Table     | Prompts to choose between DDL and Data, then opens a worksheet          |
+| Function  | Opens the function body source                                          |
+| Procedure | Opens the procedure body source                                         |
 
 Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
 
 ### Supported object types
 
-| Object type | Features |
-|-------------|----------|
-| **Tables** | Columns (with data type), indexes, constraints, table comment, column comments |
-| **Functions** | Parameters (with data type), return type, body source |
-| **Procedures** | Parameters (with data type), body source |
-| **Packages** | Specification source, body source (shown only if exists), subprograms with parameters and return types |
+| Object type    | Features                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| **Tables**     | Columns (with data type), indexes, constraints, table comment, column comments                         |
+| **Functions**  | Parameters (with data type), return type, body source                                                  |
+| **Procedures** | Parameters (with data type), body source                                                               |
+| **Packages**   | Specification source, body source (shown only if exists), subprograms with parameters and return types |
 
 ### Tree structure
 
@@ -180,14 +180,14 @@ CONNECTIONS
 
 ## Connection picker keymaps
 
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move cursor down |
-| `k` / `↑` | Move cursor up |
-| `<CR>` | Connect to selected entry |
-| `s` | Connect with a one-off connection string |
-| `a` | Add a new named connection to connmgr |
-| `q` / `<Esc>` | Close picker |
+| Key           | Action                                   |
+| ------------- | ---------------------------------------- |
+| `j` / `↓`     | Move cursor down                         |
+| `k` / `↑`     | Move cursor up                           |
+| `<CR>`        | Connect to selected entry                |
+| `s`           | Connect with a one-off connection string |
+| `a`           | Add a new named connection to connmgr    |
+| `q` / `<Esc>` | Close picker                             |
 
 ## Lua API
 
