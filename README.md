@@ -16,7 +16,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 
 ```lua
 {
-  "ShamatienkoYaroslav/nvim-ora",
+  "ShamatienkoYaroslav/oradev.nvim",
   dependencies = {
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
