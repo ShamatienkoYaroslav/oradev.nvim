@@ -8,6 +8,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 - [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) installed and accessible
 - [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
+- [snacks.nvim](https://github.com/folke/snacks.nvim) (optional, for spinner notifications)
 - [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for the schema explorer)
 
 ## Installation
@@ -20,6 +21,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
   dependencies = {
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
+    "folke/snacks.nvim",           -- optional, for spinner notifications
     "nvim-neo-tree/neo-tree.nvim", -- optional, for :OraExplorer
   },
   config = function()
@@ -32,18 +34,6 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
       sources = {
         "filesystem",
         "ora",
-      },
-      ora = {
-        window = {
-          mappings = {
-            ["<cr>"] = "toggle_node",
-            ["l"]    = "expand_node",
-            ["h"]    = "collapse_node",
-            ["r"]    = "refresh",
-            ["a"]    = "add_connection",
-            ["e"]    = "open_object",
-          },
-        },
       },
     })
   end,
@@ -62,6 +52,20 @@ require("ora").setup({
   -- Picker window dimensions (optional).
   win_width  = 60,
   win_height = 20,
+
+  -- Schema explorer key mappings (optional).
+  -- These are injected into neo-tree's ora source config automatically.
+  -- Override individual keys or set to false to disable a mapping.
+  explorer_mappings = {
+    ["<cr>"] = "toggle_node",
+    ["l"]    = "expand_node",
+    ["h"]    = "collapse_node",
+    ["r"]    = "refresh",
+    ["o"]    = "quick_open",
+    ["O"]    = "quick_open_alt",
+    ["a"]    = "show_actions",
+    ["A"]    = "add_connection",
+  },
 })
 ```
 
@@ -100,6 +104,12 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | `:OraWorksheetFormat`           | Format the current worksheet SQL using SQLcl's built-in formatter |
 | `:OraWorksheetChangeConnection` | Change the connection for the current worksheet                   |
 
+### Quick Action
+
+| Command           | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `:OraQuickAction` | Find schema objects by pattern and act on them       |
+
 ### Explorer
 
 | Command        | Description                                          |
@@ -112,23 +122,51 @@ The schema explorer (`:OraExplorer`) provides a tree sidebar for browsing Oracle
 
 ### Explorer keymaps
 
+These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
+
 | Key    | Action                                                                     |
 | ------ | -------------------------------------------------------------------------- |
 | `<CR>` | Toggle node: connect, expand/collapse, or open source                      |
 | `l`    | Expand node                                                                |
 | `h`    | Collapse node (or jump to parent)                                          |
-| `e`    | Open object (see below)                                                    |
+| `o`    | Quick open (see below)                                                     |
+| `O`    | Quick open alt (see below)                                                 |
+| `a`    | Show all actions (see below)                                               |
 | `r`    | Refresh: re-fetch children on the current node, or refresh connection list |
-| `a`    | Add a new named connection                                                 |
+| `A`    | Add a new named connection                                                 |
 
-### Opening objects with `e`
+### Quick open with `o` / `O`
 
-| Node type | Behavior                                                                |
-| --------- | ----------------------------------------------------------------------- |
-| Package   | Prompts to choose between Specification and Body, then opens the source |
-| Table     | Prompts to choose between DDL and Data, then opens a worksheet          |
-| Function  | Opens the function body source                                          |
-| Procedure | Opens the procedure body source                                         |
+| Node type | `o` (primary)     | `O` (secondary) |
+| --------- | ----------------- | --------------- |
+| Table     | Show DDL          | Show data       |
+| View      | Show DDL          | Show data       |
+| Index     | Show DDL          | —               |
+| Synonym   | Show DDL          | —               |
+| Sequence  | Show DDL          | —               |
+| Trigger   | Show source       | —               |
+| Function    | Show body          | —                    |
+| Procedure   | Show body          | —                    |
+| Package     | Show specification | Show body / Add body |
+| ORDS Module   | Define module      | Full export          |
+| ORDS Template | Define template    | —                    |
+| ORDS Handler  | Define handler     | Show source          |
+| ORDS Parameter | Define parameter  | —                    |
+
+### All actions with `a`
+
+| Node type  | Actions                                                                    |
+| ---------- | -------------------------------------------------------------------------- |
+| Connection | Connect (if disconnected), Disconnect (if connected), Show conn. string   |
+| Package    | Show specification, Show body / Add body, Drop package, Drop package body  |
+| Table      | Show DDL, Show data, Drop table                                            |
+| View       | Show DDL, Show data, Drop view                                             |
+| Index      | Show DDL, Drop index                                                       |
+| Synonym    | Show DDL, Drop synonym                                                     |
+| Sequence   | Show DDL, Drop sequence                                                    |
+| Trigger    | Show DDL, Drop trigger                                                     |
+| Function   | Show body, Drop function                                                   |
+| Procedure  | Show body, Drop procedure                                                  |
 
 Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
 
@@ -137,6 +175,11 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 | Object type    | Features                                                                                               |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | **Tables**     | Columns (with data type), indexes, constraints, table comment, column comments                         |
+| **Views**      | Columns (with data type), column comments, DDL, data                                                   |
+| **Indexes**    | Table name, uniqueness, DDL                                                                            |
+| **Synonyms**   | Target display (owner.name@dblink), DDL                                                                |
+| **Sequences**  | Last number, increment step, DDL                                                                       |
+| **Triggers**   | Table name, trigger type, source, DDL                                                                  |
 | **Functions**  | Parameters (with data type), return type, body source                                                  |
 | **Procedures** | Parameters (with data type), body source                                                               |
 | **Packages**   | Specification source, body source (shown only if exists), subprograms with parameters and return types |
@@ -145,38 +188,31 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 
 ```
 CONNECTIONS
-├── 󰆼 my_dev_db
-│   ├── 󰉋 Tables (3)
-│   │   ├── 󰓫 EMPLOYEES  Employee records
-│   │   │   ├── 󰈮 DDL
-│   │   │   ├── 󰈮 Data
-│   │   │   ├── 󰠵 EMPLOYEE_ID  NUMBER
-│   │   │   ├── 󰠵 FIRST_NAME   VARCHAR2  First name of the employee
-│   │   │   ├── 󰌹 EMP_NAME_IDX
-│   │   │   └── 󰌆 EMP_PK
-│   │   └── ...
-│   ├── 󰉋 Functions (2)
-│   │   ├── 󰊕 GET_SALARY  NUMBER
-│   │   │   ├── 󰈮 Body
-│   │   │   └── 󰆧 P_EMP_ID  NUMBER
-│   │   └── ...
-│   ├── 󰉋 Procedures (1)
-│   │   ├── 󰡱 UPDATE_SALARY
-│   │   │   ├── 󰈮 Body
-│   │   │   ├── 󰆧 P_EMP_ID  NUMBER
-│   │   │   └── 󰆧 P_AMOUNT  NUMBER
-│   │   └── ...
-│   └── 󰉋 Packages (1)
-│       └── 󰏗 HR_PKG
-│           ├── 󰈮 Specification
-│           ├── 󰈮 Body
-│           ├── 󰊕 GET_EMPLOYEE  VARCHAR2
-│           │   └── 󰆧 P_ID  NUMBER
-│           └── 󰡱 SET_SALARY
-│               ├── 󰆧 P_ID      NUMBER
-│               └── 󰆧 P_AMOUNT  NUMBER
-└── 󰆼 my_prod_db
+├──  dev
+│   ├── 󰆼 local-free
+│   │   ├── 󰉋 Tables (3)
+│   │   │   ├── 󰓫 EMPLOYEES  Employee records
+│   │   │   │   ├── 󰠵 EMPLOYEE_ID  NUMBER
+│   │   │   │   ├── 󰠵 FIRST_NAME   VARCHAR2  First name of the employee
+│   │   │   │   ├── 󰌹 EMP_NAME_IDX
+│   │   │   │   └── 󰌆 EMP_PK
+│   │   │   └── ...
+│   │   ├── 󰉋 Triggers (2)
+│   │   │   ├── 󱐋 AUDIT_TRG  EMPLOYEES
+│   │   │   └── 󱐋 LOG_TRG    ORDERS
+│   │   ├── 󰉋 Functions (2)
+│   │   │   ├── 󰊕 GET_SALARY  NUMBER
+│   │   │   │   └── 󰆧 P_EMP_ID  NUMBER
+│   │   │   └── ...
+│   │   └── 󰉋 Packages (1)
+│   │       └── 󰏗 HR_PKG
+│   │           └── 󰊕 GET_EMPLOYEE  VARCHAR2
+│   └── 󰆼 local-xe
+└──  prod
+    └── 󰆼 main-db
 ```
+
+Connections organized in SQLcl connmgr folders are shown in a hierarchy. Connections without folders appear at the root level as before. The worksheet picker (`:OraWorksheetNew`) remains flat — no folders.
 
 ## Connection picker keymaps
 
@@ -215,6 +251,9 @@ require("ora").format_worksheet()
 
 -- Change the worksheet connection
 require("ora").change_worksheet_connection()
+
+-- Find schema objects by pattern and act on them
+require("ora").quick_action()
 
 -- Open the schema explorer
 require("ora").explorer()

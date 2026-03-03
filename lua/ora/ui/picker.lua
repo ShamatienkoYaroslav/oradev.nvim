@@ -10,7 +10,7 @@ local M = {}
 ---  connected to directly.  Closing without a selection calls on_select(nil).
 function M.open(opts)
   opts = opts or {}
-  local names = require("ora.connmgr").list()
+  local tree = require("ora.connmgr").list_tree()
 
   -- Guard: on_select fires at most once
   local on_select = opts.on_select
@@ -19,9 +19,19 @@ function M.open(opts)
   end
 
   local items = {}
-  for _, name in ipairs(names) do
-    table.insert(items, Menu.item(name, { kind = "stored", url = name }))
+  local function flatten(entries, depth)
+    for _, entry in ipairs(entries) do
+      if entry.type == "folder" then
+        local prefix = string.rep("  ", depth)
+        table.insert(items, Menu.separator(prefix .. " " .. entry.name))
+        flatten(entry.children or {}, depth + 1)
+      else
+        local prefix = string.rep("  ", depth)
+        table.insert(items, Menu.item(prefix .. entry.name, { kind = "stored", url = entry.name }))
+      end
+    end
   end
+  flatten(tree, 0)
   if #items > 0 then
     table.insert(items, Menu.separator())
   end

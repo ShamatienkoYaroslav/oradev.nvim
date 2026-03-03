@@ -13,6 +13,11 @@ local M = {
 -- Default renderers for all ora node types.
 -- Without these, neo-tree falls back to "type: name" display.
 local default_renderers = {
+  folder = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+  },
   connection = {
     { "indent" },
     { "icon" },
@@ -34,26 +39,23 @@ local default_renderers = {
     { "icon" },
     { "name" },
   },
-  table_action = {
-    { "indent" },
-    { "icon" },
-    { "name" },
-  },
-  source_action = {
-    { "indent" },
-    { "icon" },
-    { "name" },
-  },
   view = {
     { "indent" },
     { "icon" },
     { "name" },
     { "comment" },
   },
-  view_action = {
+  synonym = {
     { "indent" },
     { "icon" },
     { "name" },
+    { "comment" },
+  },
+  schema_index = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
   },
   column = {
     { "indent" },
@@ -93,11 +95,6 @@ local default_renderers = {
     { "icon" },
     { "name" },
   },
-  package_part = {
-    { "indent" },
-    { "icon" },
-    { "name" },
-  },
   subprogram = {
     { "indent" },
     { "icon" },
@@ -114,6 +111,40 @@ local default_renderers = {
     { "indent" },
     { "icon" },
     { "name" },
+  },
+  sequence = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
+  trigger = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
+  ords_module = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
+  ords_template = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+  },
+  ords_handler = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+  },
+  ords_parameter = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "return_type" },
   },
 }
 
@@ -148,11 +179,21 @@ M.navigate = function(state, path, path_to_reveal, callback, async)
 end
 
 ---Configures the source. Called once during neo-tree setup.
+---Overrides window mappings with explorer_mappings from ora.config.
+---This runs after neo-tree merges global defaults, so we must force-set
+---our mappings to replace generic filesystem commands (e.g. `a` = "add")
+---with ora-specific ones (e.g. `a` = "show_actions").
 ---@param config table
 ---@param global_config table
 M.setup = function(config, global_config)
-  -- No automatic events needed — connections don't change on their own.
-  -- Users press `r` to refresh.
+  local ora_cfg = require("ora.config").values
+  if ora_cfg.explorer_mappings then
+    if not config.window then config.window = {} end
+    if not config.window.mappings then config.window.mappings = {} end
+    for key, cmd in pairs(ora_cfg.explorer_mappings) do
+      config.window.mappings[key] = cmd
+    end
+  end
 end
 
 return M

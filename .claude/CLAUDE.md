@@ -12,7 +12,7 @@ make test
 make test-file FILE=spec/ora/config_spec.lua
 
 # Launch nvim with the plugin loaded for interactive testing
-make dev   # then :OraExplorer, :OraConnectionsList, :OraWorksheetNew
+make dev   # then :OraExplorer, :OraConnectionsList, :OraWorksheetNew, :OraQuickAction
 
 # Syntax-check a single Lua file (quick sanity check, no plenary needed)
 nvim --headless -u NONE --cmd "set rtp+=." \
@@ -27,7 +27,7 @@ Tests use **plenary.nvim** (busted runner). Plenary must be installed at
 `plugin/ora.lua` is the auto-loaded entry point. It registers the user commands
 (`OraConnectionsList`, `OraConnect`, `OraAddConnection`, `OraWorksheetNew`,
 `OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetFormat`,
-`OraWorksheetChangeConnection`, `OraExplorer`) and guards against double-loading
+`OraWorksheetChangeConnection`, `OraQuickAction`, `OraExplorer`) and guards against double-loading
 with `vim.g.loaded_ora`. It never does any work itself — it delegates to
 `lua/ora/init.lua`.
 
@@ -45,9 +45,11 @@ window/buffer when possible, and otherwise opens a `botright split` terminal via
 `vim.fn.termopen`. Buffer names follow the pattern `ora://<label>`.
 
 `lua/ora/connmgr.lua` interfaces with SQLcl's connection manager (`connmgr`).
-`list()` returns stored connection names, `show(name)` returns connection details
-(connect_string, user), `add(name, url)` creates a new named connection. All calls
-run SQLcl `/nolog` via `plenary.Job:sync()`.
+`list()` returns stored connection names (flat), `list_tree()` returns the
+hierarchical folder/connection structure parsed from the ASCII tree output,
+`show(name)` returns connection details (connect_string, user),
+`add(name, url)` creates a new named connection. All calls run SQLcl `/nolog`
+via `plenary.Job:sync()`.
 
 `lua/ora/worksheet.lua` tracks open SQL/PL/SQL worksheet buffers and their connections.
 `create()` makes a new buffer, `find(bufnr)` looks up by buffer number,
@@ -71,10 +73,26 @@ Uses `plenary.Job:start()` for async queries. Functions include:
 - `fetch_procedures` — `user_objects`
 - `fetch_packages` — `user_objects`
 - `fetch_package_subprograms_with_types` — `user_procedures` + `user_arguments`
+- `fetch_all_indexes` — `user_indexes` (multi-column: name, table_name, index_type, uniqueness)
+- `fetch_index_ddl` — `DBMS_METADATA.GET_DDL` for indexes
+- `fetch_synonyms` — `user_synonyms` (multi-column: name, target_owner, target_name, db_link)
+- `fetch_synonym_ddl` — `DBMS_METADATA.GET_DDL` for synonyms
+- `fetch_sequences` — `user_sequences` (multi-column: name, min_value, max_value, increment_by, last_number)
+- `fetch_triggers` — `user_triggers` (multi-column: name, table_name, trigger_type)
 - `fetch_source` — `user_source` (package spec/body, function/procedure body)
 - `fetch_ddl` — `DBMS_METADATA.GET_DDL`
+- `fetch_objects_by_pattern` — `user_objects` filtered by LIKE pattern (multi-column: name, object_type)
 - `fetch_object_params`, `fetch_subprogram_params` — `user_arguments` (multi-column)
 - `fetch_package_has_body` — checks for `PACKAGE BODY` in `user_objects`
+- `fetch_ords_modules` — `user_ords_modules` (multi-column: id, name, uri_prefix)
+- `fetch_ords_templates` — `user_ords_templates` by module_id (multi-column: id, uri_template)
+- `fetch_ords_handlers` — `user_ords_handlers` by template_id (multi-column: id, method, source_type)
+- `fetch_ords_parameters` — `user_ords_parameters` by handler_id (multi-column: name, param_type, source_type)
+- `fetch_ords_module_details` — `user_ords_modules` single row (name, uri_prefix, items_per_page, status, comments)
+- `fetch_ords_template_details` — `user_ords_templates` + `user_ords_modules` join (uri_template, module_name, priority, etag_type, etag_query, comments)
+- `fetch_ords_handler_details` — `user_ords_handlers` + templates + modules join (method, source_type, module_name, uri_template, mimes_allowed, comments)
+- `fetch_ords_module_handlers` — joins `user_ords_templates` + `user_ords_handlers` by module_id (multi-column: uri_template, method, source_type, handler_id)
+- `fetch_ords_handler_source` — `user_ords_handlers` source column (CLOB, plain text spool)
 
 ### Neo-tree explorer
 
@@ -83,7 +101,7 @@ source plugin pattern:
 
 `lua/neo-tree/sources/ora/init.lua` — source entry point with `navigate()` and
 `setup()`. Defines `default_renderers` for all custom node types (connection,
-category, table, column, index, constraint, function, procedure, package,
+category, table, column, index, constraint, schema_index, synonym, trigger, function, procedure, package,
 package_part, subprogram, parameter, table_action, source_action, message).
 Renderers are injected into `state.renderers` during navigate.
 
@@ -91,7 +109,7 @@ Renderers are injected into `state.renderers` during navigate.
 - `toggle_node` (`<CR>`) — context-aware: connect, expand/collapse, open source
 - `expand_node` (`l`) — expand only, never collapse
 - `collapse_node` (`h`) — collapse or jump to parent
-- `open_object` (`e`) — open object: picker for packages/tables, direct for functions/procedures
+- `show_actions` (`a`) — context-aware actions picker: show source/DDL/data, drop objects
 - `refresh` (`r`) — context-aware: re-fetch children or refresh connection list
 - `add_connection` (`a`) — open add-connection prompt
 
@@ -105,9 +123,23 @@ Internal handlers:
 - `_toggle_package` — fetches has_body + subprograms (with return types) in parallel,
   adds Specification/Body package_part nodes
 - `_toggle_subprogram` — fetches params
+- `_toggle_schema_index` — creates DDL action child for index node
+- `_open_index_ddl` — fetches index DDL via DBMS_METADATA, creates worksheet
+- `_open_synonym_ddl` — fetches synonym DDL via DBMS_METADATA, creates worksheet
+- `_open_sequence_ddl` — fetches sequence DDL via DBMS_METADATA, creates worksheet
+- `_toggle_ords_module` — fetches templates by module_id
+- `_toggle_ords_template` — fetches handlers by template_id
+- `_toggle_ords_handler` — fetches parameters by handler_id
+- `_open_ords_define_module` — generates ORDS.DEFINE_MODULE worksheet from node metadata
+- `_open_ords_define_template` — generates ORDS.DEFINE_TEMPLATE worksheet from node metadata
+- `_open_ords_define_handler` — generates ORDS.DEFINE_HANDLER worksheet from node metadata
+- `_open_ords_define_parameter` — generates ORDS.DEFINE_PARAMETER worksheet from parameter node
+- `_open_ords_module_ddl` — fetches full module export via ORDS_EXPORT, creates worksheet
+- `_open_ords_handler_source` — fetches handler source code, creates worksheet
 - `_open_package_source` — fetches source, creates worksheet with connection pre-set
 - `_open_object_source` — fetches function/procedure source, creates worksheet
 - `_open_table_action` — DDL: fetches via DBMS_METADATA; Data: pre-fills SELECT *
+- `_open_view_action` — DDL: fetches view DDL; Data: pre-fills SELECT *
 - `_set_category_children` — caches children, preserves expansion state across rebuilds
 - `_collect_expanded` / `_restore_expanded` — save/restore NuiTree node expansion
 
@@ -123,7 +155,9 @@ Internal handlers:
 in `state.ora_children`. Builder functions: `make_table_children`,
 `make_column_children`, `make_index_children`, `make_constraint_children`,
 `make_function_children`, `make_procedure_children`, `make_package_children`,
-`make_subprogram_children`, `make_parameter_children`, `make_object_parameter_children`.
+`make_subprogram_children`, `make_parameter_children`, `make_object_parameter_children`,
+`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_ords_module_children`, `make_ords_template_children`,
+`make_ords_handler_children`, `make_ords_parameter_children`.
 
 ### Neo-tree state
 
@@ -134,12 +168,17 @@ The explorer stores state on the neo-tree state object:
 
 ### Node types and their `extra` fields
 
+- `folder` — `{}` (pure grouping node, children are connections or nested folders)
 - `connection` — `{key, is_named, connected}`
 - `category` — `{category, conn_name, loaded}`
 - `table` — `{conn_name, table_name, comment?, loaded}`
 - `column` — `{conn_name, table_name, data_type, comment?}`
 - `index` — `{conn_name, table_name}`
 - `constraint` — `{conn_name, table_name}`
+- `schema_index` — `{conn_name, index_name, table_name, index_type, uniqueness, detail, loaded}`
+- `synonym` — `{conn_name, synonym_name, target_owner, target_name, db_link, target}`
+- `sequence` — `{conn_name, sequence_name, min_value, max_value, increment_by, last_number, detail}`
+- `trigger` — `{conn_name, trigger_name, table_name, trigger_type}`
 - `function` — `{conn_name, object_name, return_type, loaded}`
 - `procedure` — `{conn_name, object_name, loaded}`
 - `package` — `{conn_name, pkg_name, loaded}`
@@ -147,7 +186,12 @@ The explorer stores state on the neo-tree state object:
 - `subprogram` — `{conn_name, pkg_name, subprogram, return_type?, loaded}`
 - `parameter` — `{conn_name, data_type, ...}`
 - `table_action` — `{conn_name, table_name, action}` (action = "ddl" | "data")
+- `view_action` — `{conn_name, view_name, action}` (action = "ddl" | "data")
 - `source_action` — `{conn_name, object_name, object_type}`
+- `ords_module` — `{conn_name, module_id, uri_prefix, loaded}`
+- `ords_template` — `{conn_name, template_id, module_name, loaded}`
+- `ords_handler` — `{conn_name, handler_id, method, source_type, module_name, uri_template, loaded}`
+- `ords_parameter` — `{conn_name, param_type, source_type}`
 
 ## UI libraries
 
@@ -164,6 +208,10 @@ connect mode and select mode (callback with chosen connection).
 `lua/ora/ui/add_connection.lua` — nui.input prompts for name + URL.
 
 `lua/ora/ui/worksheets_picker.lua` — nui.menu picker for open worksheets.
+
+`lua/ora/ui/quick_action.lua` — quick action flow: pick connection → enter pattern →
+pick matching objects → pick action → open worksheet. Uses `schema.fetch_objects_by_pattern`
+and reuses worksheet creation patterns from the explorer.
 
 ## Test layout
 

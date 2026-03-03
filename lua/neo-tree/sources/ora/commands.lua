@@ -18,6 +18,127 @@ local function schema_name(state, conn_name)
   return state.ora_schema and state.ora_schema[conn_name] or conn_name
 end
 
+---Open a worksheet buffer in the first non-neo-tree window.
+---@param ws table  worksheet object (must have .bufnr)
+local function open_ws_in_main(ws)
+  local ws_mod = require("ora.worksheet")
+  local wins = vim.api.nvim_tabpage_list_wins(0)
+  local target_win
+  for _, win in ipairs(wins) do
+    local cfg = vim.api.nvim_win_get_config(win)
+    if cfg.relative == "" then
+      local buf = vim.api.nvim_win_get_buf(win)
+      local bname = vim.api.nvim_buf_get_name(buf)
+      if not bname:match("neo%-tree") then
+        target_win = win
+        break
+      end
+    end
+  end
+  if target_win then
+    vim.api.nvim_win_set_buf(target_win, ws.bufnr)
+    vim.api.nvim_set_current_win(target_win)
+  else
+    vim.cmd("wincmd l")
+    vim.api.nvim_win_set_buf(0, ws.bufnr)
+  end
+  ws_mod.refresh_winbar(ws)
+end
+
+---Format the content of a worksheet buffer using SQLcl's formatter.
+---Errors are silently ignored (the unformatted content remains).
+---@param bufnr integer
+local function format_buffer(bufnr)
+  local format = require("ora.format")
+  format.run(bufnr, function(_) end)
+end
+
+---Fetch a DROP DDL statement from the database and open it in a worksheet.
+---@param state table
+---@param conn_name string
+---@param object_name string
+---@param object_type string  e.g. "TABLE", "PACKAGE", "PACKAGE BODY", "FUNCTION", "PROCEDURE", "VIEW"
+local function open_drop_worksheet(state, conn_name, object_name, object_type)
+  local schema = require("ora.schema")
+  local conn   = { key = conn_name, is_named = true }
+  local notify = require("ora.notify")
+  local nid    = "ora_open"
+  notify.progress(nid, "Loading DROP DDL…")
+
+  schema.fetch_drop_ddl(conn, object_type, object_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load DROP DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    if not lines or #lines == 0 then
+      notify.error(nid, "Object not found")
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. object_name .. " (Drop " .. object_type:lower() .. ")"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = object_name .. "-drop",
+      display_name = display,
+      icon         = "󰆴 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "DROP DDL loaded")
+  end)
+end
+
+---Show a small nui.menu popup for picking an action (no search input).
+---@param title string  popup title
+---@param actions string[]  list of action labels
+---@param on_choice fun(choice: string)  called with the selected label
+local function action_picker(title, actions, on_choice)
+  local Menu = require("nui.menu")
+  local items = {}
+  for _, a in ipairs(actions) do
+    table.insert(items, Menu.item(a))
+  end
+  local menu = Menu({
+    relative = "cursor",
+    position = { row = 1, col = 0 },
+    size     = { width = 30 },
+    border   = {
+      style = "rounded",
+      text  = { top = " " .. title .. " ", top_align = "left" },
+    },
+    enter = true,
+  }, {
+    lines  = items,
+    keymap = {
+      focus_next = { "j", "<Down>" },
+      focus_prev = { "k", "<Up>" },
+      close      = {},
+      submit     = { "<CR>" },
+    },
+    on_submit = function(item)
+      on_choice(item.text)
+    end,
+  })
+  local function do_close() menu:unmount() end
+  menu:map("n", "q",     do_close, { noremap = true })
+  menu:map("n", "<Esc>", do_close, { noremap = true })
+  menu:mount()
+end
+
 ---Toggle a connection (connect + expand), or expand/collapse a category
 ---with lazy loading of schema children.
 M.toggle_node = function(state)
@@ -33,20 +154,18 @@ M.toggle_node = function(state)
     M._toggle_table(state, node)
   elseif node.type == "view" then
     M._toggle_view(state, node)
-  elseif node.type == "view_action" then
-    M._open_view_ddl(state, node)
-  elseif node.type == "table_action" then
-    M._open_table_action(state, node)
-  elseif node.type == "source_action" then
-    M._open_object_source(state, node)
   elseif node.type == "function" or node.type == "procedure" then
     M._toggle_func_or_proc(state, node)
-  elseif node.type == "package_part" then
-    M._open_package_source(state, node)
   elseif node.type == "package" then
     M._toggle_package(state, node)
   elseif node.type == "subprogram" then
     M._toggle_subprogram(state, node)
+  elseif node.type == "ords_module" then
+    M._toggle_ords_module(state, node)
+  elseif node.type == "ords_template" then
+    M._toggle_ords_template(state, node)
+  elseif node.type == "ords_handler" then
+    M._toggle_ords_handler(state, node)
   elseif node:has_children() then
     -- package nodes etc — simple expand/collapse
     if node:is_expanded() then
@@ -78,25 +197,41 @@ M._toggle_connection = function(state, node)
   -- Mark as connected — schema queries use the connmgr name directly
   state.ora_connected[name] = true
 
-  -- Cache the schema (Oracle user) name for display
-  if not state.ora_schema then state.ora_schema = {} end
-  local info = require("ora.connmgr").show(name)
-  if info and info.user then
-    state.ora_schema[name] = info.user
-  end
+  -- Show loading state (spinner icon + "…" suffix in the tree)
+  node.extra.loading = true
+  renderer.redraw(state)
 
-  -- Rebuild and re-navigate to show category stubs
-  local ora_source = require("neo-tree.sources.ora")
-  ora_source.navigate(state)
+  local notify = require("ora.notify")
+  local nid = "ora_conn"
+  notify.progress(nid, "Connecting to " .. name .. "…")
 
-  -- Expand the connection node to reveal categories
-  if state.tree then
-    local conn_node = state.tree:get_node("conn:" .. name)
-    if conn_node then
-      conn_node:expand()
-      renderer.redraw(state)
+  -- Defer the blocking connmgr.show() call so the spinner notification
+  -- and loading indicator get a chance to render before the main loop is blocked.
+  vim.schedule(function()
+    -- Cache the schema (Oracle user) name for display
+    if not state.ora_schema then state.ora_schema = {} end
+    local info = require("ora.connmgr").show(name)
+    if info and info.user then
+      state.ora_schema[name] = info.user
     end
-  end
+
+    node.extra.loading = false
+
+    -- Rebuild and re-navigate to show category stubs
+    local ora_source = require("neo-tree.sources.ora")
+    ora_source.navigate(state)
+
+    -- Expand the connection node to reveal categories
+    if state.tree then
+      local conn_node = state.tree:get_node("conn:" .. name)
+      if conn_node then
+        conn_node:expand()
+        renderer.redraw(state)
+      end
+    end
+
+    notify.done(nid, "Connected to " .. name)
+  end)
 end
 
 ---Expand/collapse a category node, lazy-loading children on first expand.
@@ -137,7 +272,22 @@ M._toggle_category = function(state, node)
     build_fn = function(names) return items.make_procedure_children(conn_name, names) end
   elseif category == "packages" then
     fetch_fn = function(cb) schema.fetch_packages(conn, cb) end
-    build_fn = function(names) return items.make_package_children(conn_name, names) end
+    build_fn = function(pkgs) return items.make_package_children(conn_name, pkgs) end
+  elseif category == "indexes" then
+    fetch_fn = function(cb) schema.fetch_all_indexes(conn, cb) end
+    build_fn = function(indexes) return items.make_schema_index_children(conn_name, indexes) end
+  elseif category == "synonyms" then
+    fetch_fn = function(cb) schema.fetch_synonyms(conn, cb) end
+    build_fn = function(synonyms) return items.make_synonym_children(conn_name, synonyms) end
+  elseif category == "triggers" then
+    fetch_fn = function(cb) schema.fetch_triggers(conn, cb) end
+    build_fn = function(triggers) return items.make_trigger_children(conn_name, triggers) end
+  elseif category == "sequences" then
+    fetch_fn = function(cb) schema.fetch_sequences(conn, cb) end
+    build_fn = function(sequences) return items.make_sequence_children(conn_name, sequences) end
+  elseif category == "ords" then
+    fetch_fn = function(cb) schema.fetch_ords_modules(conn, cb) end
+    build_fn = function(modules) return items.make_ords_module_children(conn_name, modules) end
   end
 
   if not fetch_fn then return end
@@ -207,23 +357,6 @@ M._toggle_table = function(state, node)
     end
 
     local children = {}
-    -- DDL and Data action nodes
-    table.insert(children, {
-      id       = "ddl:" .. conn_name .. ":" .. table_name,
-      name     = "DDL",
-      type     = "table_action",
-      path     = conn_name .. "/Tables/" .. table_name .. "/DDL",
-      children = {},
-      extra    = { conn_name = conn_name, table_name = table_name, action = "ddl" },
-    })
-    table.insert(children, {
-      id       = "data:" .. conn_name .. ":" .. table_name,
-      name     = "Data",
-      type     = "table_action",
-      path     = conn_name .. "/Tables/" .. table_name .. "/Data",
-      children = {},
-      extra    = { conn_name = conn_name, table_name = table_name, action = "data" },
-    })
     for _, c in ipairs(results.columns or {}) do table.insert(children, c) end
     for _, c in ipairs(results.indexes or {}) do table.insert(children, c) end
     for _, c in ipairs(results.constraints or {}) do table.insert(children, c) end
@@ -307,15 +440,6 @@ M._toggle_view = function(state, node)
     end
 
     local children = {}
-    -- DDL action node
-    table.insert(children, {
-      id       = "vddl:" .. conn_name .. ":" .. view_name,
-      name     = "DDL",
-      type     = "view_action",
-      path     = conn_name .. "/Views/" .. view_name .. "/DDL",
-      children = {},
-      extra    = { conn_name = conn_name, view_name = view_name },
-    })
     for _, c in ipairs(results.columns or {}) do table.insert(children, c) end
 
     M._set_category_children(state, node, conn_name, children)
@@ -337,63 +461,69 @@ M._toggle_view = function(state, node)
 end
 
 ---Open the DDL of a view in a new worksheet.
-M._open_view_ddl = function(state, node)
+M._open_view_action = function(state, node)
   local conn_name = node.extra.conn_name
   local view_name = node.extra.view_name
+  local action    = node.extra.action
 
-  node.extra.loading = true
-  renderer.redraw(state)
+  local ws_mod  = require("ora.worksheet")
+  local ws_conn = { key = conn_name, label = conn_name, is_named = true }
 
-  local schema = require("ora.schema")
-  local conn = { key = conn_name, is_named = true }
-
-  schema.fetch_view_ddl(conn, view_name, function(lines, err)
-    node.extra.loading = false
+  if action == "ddl" then
+    node.extra.loading = true
     renderer.redraw(state)
 
-    if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
-      return
-    end
+    local schema = require("ora.schema")
+    local conn = { key = conn_name, is_named = true }
 
-    local ws_mod = require("ora.worksheet")
-    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
-    local display = schema_name(state, conn_name) .. "." .. view_name .. " (View DDL)"
+    local notify = require("ora.notify")
+    local nid = "ora_open"
+    notify.progress(nid, "Loading view DDL…")
+
+    schema.fetch_view_ddl(conn, view_name, function(lines, err)
+      node.extra.loading = false
+      renderer.redraw(state)
+
+      if err then
+        notify.error(nid, "Failed to load view DDL")
+        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        return
+      end
+
+      local display = schema_name(state, conn_name) .. "." .. view_name .. " (View DDL)"
+      local ws = ws_mod.create({
+        connection   = ws_conn,
+        name         = view_name .. "-ddl",
+        display_name = display,
+        icon         = "󰡠 ",
+      })
+
+      local buf_lines = {}
+      for _, line in ipairs(lines or {}) do
+        line = line:gsub("%s+$", "")
+        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+          table.insert(buf_lines, seg)
+        end
+      end
+      vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+      vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+      open_ws_in_main(ws)
+      format_buffer(ws.bufnr)
+      notify.done(nid, "View DDL loaded")
+    end)
+  elseif action == "data" then
+    local display = schema_name(state, conn_name) .. "." .. view_name .. " (View Data)"
     local ws = ws_mod.create({
       connection   = ws_conn,
-      name         = view_name .. "-ddl",
+      name         = view_name .. "-data",
       display_name = display,
       icon         = "󰡠 ",
     })
-
-    local buf_lines = {}
-    for _, line in ipairs(lines or {}) do
-      line = line:gsub("%s+$", "")
-      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
-        table.insert(buf_lines, seg)
-      end
-    end
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. view_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
-
-    local wins = vim.api.nvim_tabpage_list_wins(0)
-    local target_win
-    for _, win in ipairs(wins) do
-      local buf = vim.api.nvim_win_get_buf(win)
-      if vim.bo[buf].filetype ~= "neo-tree" then
-        target_win = win
-        break
-      end
-    end
-    if target_win then
-      vim.api.nvim_set_current_win(target_win)
-      vim.api.nvim_win_set_buf(target_win, ws.bufnr)
-    else
-      vim.cmd("wincmd l")
-      vim.api.nvim_win_set_buf(0, ws.bufnr)
-    end
-    ws_mod.refresh_winbar(ws)
-  end)
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+  end
 end
 
 ---Open a table DDL or Data worksheet.
@@ -435,12 +565,16 @@ M._open_table_action = function(state, node)
 
     local schema = require("ora.schema")
     local conn = { key = conn_name, is_named = true }
+    local notify = require("ora.notify")
+    local nid = "ora_open"
+    notify.progress(nid, "Loading DDL…")
 
     schema.fetch_ddl(conn, table_name, function(lines, err)
       node.extra.loading = false
       renderer.redraw(state)
 
       if err then
+        notify.error(nid, "Failed to load DDL")
         vim.notify("[ora] " .. err, vim.log.levels.ERROR)
         return
       end
@@ -463,6 +597,8 @@ M._open_table_action = function(state, node)
       vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_in_main(ws)
+      format_buffer(ws.bufnr)
+      notify.done(nid, "DDL loaded")
     end)
   elseif action == "data" then
     local display = schema_name(state, conn_name) .. "." .. table_name .. " (Table Data)"
@@ -476,7 +612,137 @@ M._open_table_action = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. table_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_in_main(ws)
+    format_buffer(ws.bufnr)
   end
+end
+
+---Open the DDL of a synonym in a new worksheet.
+M._open_synonym_ddl = function(state, node)
+  local conn_name    = node.extra.conn_name
+  local synonym_name = node.extra.synonym_name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid    = "ora_open"
+  notify.progress(nid, "Loading synonym DDL…")
+
+  local schema = require("ora.schema")
+  schema.fetch_synonym_ddl(conn, synonym_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load synonym DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. synonym_name .. " (Synonym DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = synonym_name .. "-ddl",
+      display_name = display,
+      icon         = "󰔖 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Synonym DDL loaded")
+  end)
+end
+
+---Fetch sequence DDL via DBMS_METADATA and open in a worksheet.
+M._open_sequence_ddl = function(state, node)
+  local conn_name     = node.extra.conn_name
+  local sequence_name = node.extra.sequence_name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid    = "ora_open"
+  notify.progress(nid, "Loading sequence DDL…")
+
+  local schema = require("ora.schema")
+  schema.fetch_object_ddl(conn, "SEQUENCE", sequence_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load sequence DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. sequence_name .. " (Sequence DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = sequence_name .. "-ddl",
+      display_name = display,
+      icon         = "󰔚 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Sequence DDL loaded")
+  end)
+end
+
+---Open the DDL of an index in a new worksheet.
+M._open_index_ddl = function(state, node)
+  local conn_name  = node.extra.conn_name
+  local index_name = node.extra.index_name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid    = "ora_open"
+  notify.progress(nid, "Loading index DDL…")
+
+  local schema = require("ora.schema")
+  schema.fetch_index_ddl(conn, index_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load index DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. index_name .. " (Index DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = index_name .. "-ddl",
+      display_name = display,
+      icon         = "󰌹 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Index DDL loaded")
+  end)
 end
 
 ---Open the source code of a package spec or body in a new worksheet.
@@ -492,11 +758,16 @@ M._open_package_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading package source…")
+
   schema.fetch_source(conn, pkg_name, object_type, function(lines, err)
     node.extra.loading = false
     renderer.redraw(state)
 
     if err then
+      notify.error(nid, "Failed to load package source")
       vim.notify("[ora] " .. err, vim.log.levels.ERROR)
       return
     end
@@ -547,6 +818,8 @@ M._open_package_source = function(state, node)
     end
 
     ws_mod.refresh_winbar(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Package source loaded")
   end)
 end
 
@@ -581,28 +854,8 @@ M._toggle_package = function(state, node)
     if pending > 0 then return end
 
     node.extra.loading = false
+    node.extra.has_body = results.has_body
     local children = {}
-    -- Specification
-    table.insert(children, {
-      id       = "part:" .. conn_name .. ":" .. pkg_name .. ":spec",
-      name     = "Specification",
-      type     = "package_part",
-      path     = conn_name .. "/Packages/" .. pkg_name .. "/spec",
-      children = {},
-      extra    = { conn_name = conn_name, pkg_name = pkg_name, part = "spec" },
-    })
-    -- Body node only if body exists
-    if results.has_body then
-      table.insert(children, {
-        id       = "part:" .. conn_name .. ":" .. pkg_name .. ":body",
-        name     = "Body",
-        type     = "package_part",
-        path     = conn_name .. "/Packages/" .. pkg_name .. "/body",
-        children = {},
-        extra    = { conn_name = conn_name, pkg_name = pkg_name, part = "body" },
-      })
-    end
-    -- Subprograms
     for _, sub in ipairs(results.subprograms or {}) do
       table.insert(children, {
         id       = "sub:" .. conn_name .. ":" .. pkg_name .. ":" .. sub.name,
@@ -659,18 +912,7 @@ M._toggle_func_or_proc = function(state, node)
       renderer.redraw(state)
       return
     end
-    local object_type = node.type == "function" and "FUNCTION" or "PROCEDURE"
     local children = {}
-    -- Body node first
-    table.insert(children, {
-      id       = "body:" .. conn_name .. ":" .. object_name,
-      name     = "Body",
-      type     = "source_action",
-      path     = conn_name .. "/" .. object_name .. "/body",
-      children = {},
-      extra    = { conn_name = conn_name, object_name = object_name, object_type = object_type },
-    })
-    -- Then parameters
     for _, p in ipairs(items.make_object_parameter_children(conn_name, object_name, params or {})) do
       table.insert(children, p)
     end
@@ -690,20 +932,27 @@ M._open_object_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading source…")
+
   schema.fetch_source(conn, object_name, object_type, function(lines, err)
     node.extra.loading = false
     renderer.redraw(state)
 
     if err then
+      notify.error(nid, "Failed to load source")
       vim.notify("[ora] " .. err, vim.log.levels.ERROR)
       return
     end
 
     local ws_mod = require("ora.worksheet")
     local ws_conn = { key = conn_name, label = conn_name, is_named = true }
-    local icon = object_type == "FUNCTION" and "󰊕 " or "󰡱 "
-    local type_label = object_type == "FUNCTION" and "Function" or "Procedure"
-    local display = schema_name(state, conn_name) .. "." .. object_name .. " (" .. type_label .. " Body)"
+    local icon_map  = { FUNCTION = "󰊕 ", PROCEDURE = "󰡱 ", TRIGGER = "󱐋 " }
+    local label_map = { FUNCTION = "Function Body", PROCEDURE = "Procedure Body", TRIGGER = "Trigger Source" }
+    local icon = icon_map[object_type] or "󰡱 "
+    local type_label = label_map[object_type] or (object_type:sub(1,1) .. object_type:sub(2):lower() .. " Body")
+    local display = schema_name(state, conn_name) .. "." .. object_name .. " (" .. type_label .. ")"
     local ws = ws_mod.create({
       connection   = ws_conn,
       name         = object_name .. "-body",
@@ -740,6 +989,8 @@ M._open_object_source = function(state, node)
       vim.api.nvim_win_set_buf(0, ws.bufnr)
     end
     ws_mod.refresh_winbar(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Source loaded")
   end)
 end
 
@@ -776,6 +1027,628 @@ M._toggle_subprogram = function(state, node)
     end
     local children = items.make_parameter_children(conn_name, pkg_name, sub_name, params or {})
     M._set_category_children(state, node, conn_name, children)
+  end)
+end
+
+---Expand/collapse an ORDS module node, lazy-loading templates.
+M._toggle_ords_module = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local items = require("neo-tree.sources.ora.lib.items")
+  local conn_name = node.extra.conn_name
+  local module_id = node.extra.module_id
+  local conn = { key = conn_name, is_named = true }
+
+  local module_name = node.name
+
+  schema.fetch_ords_templates(conn, module_id, function(templates, err)
+    node.extra.loading = false
+    if err then
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      renderer.redraw(state)
+      return
+    end
+    local children = items.make_ords_template_children(conn_name, module_id, module_name, templates or {})
+    M._set_category_children(state, node, conn_name, children)
+  end)
+end
+
+---Expand/collapse an ORDS template node, lazy-loading handlers.
+M._toggle_ords_template = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local items = require("neo-tree.sources.ora.lib.items")
+  local conn_name = node.extra.conn_name
+  local template_id = node.extra.template_id
+  local conn = { key = conn_name, is_named = true }
+
+  local module_name  = node.extra.module_name or ""
+  local uri_template = node.name
+
+  schema.fetch_ords_handlers(conn, template_id, function(handlers, err)
+    node.extra.loading = false
+    if err then
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      renderer.redraw(state)
+      return
+    end
+    local children = items.make_ords_handler_children(conn_name, template_id, module_name, uri_template, handlers or {})
+    M._set_category_children(state, node, conn_name, children)
+  end)
+end
+
+---Expand/collapse an ORDS handler node, lazy-loading parameters.
+M._toggle_ords_handler = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local items = require("neo-tree.sources.ora.lib.items")
+  local conn_name    = node.extra.conn_name
+  local handler_id   = node.extra.handler_id
+  local module_name  = node.extra.module_name or ""
+  local uri_template = node.extra.uri_template or ""
+  local method       = node.extra.method or ""
+  local conn = { key = conn_name, is_named = true }
+
+  schema.fetch_ords_parameters(conn, handler_id, function(params, err)
+    node.extra.loading = false
+    if err then
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      renderer.redraw(state)
+      return
+    end
+    local children = items.make_ords_parameter_children(conn_name, handler_id, module_name, uri_template, method, params or {})
+    M._set_category_children(state, node, conn_name, children)
+  end)
+end
+
+---Format a SQL string or NULL literal for embedding in PL/SQL.
+---@param val string|nil
+---@return string
+local function sql_str_or_null(val)
+  if val then return "'" .. val .. "'" end
+  return "NULL"
+end
+
+---Open a worksheet with an ORDS.DEFINE_MODULE call, fetching details from user_ords_modules.
+M._open_ords_define_module = function(state, node)
+  local conn_name   = node.extra.conn_name
+  local module_name = node.name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading module details…")
+
+  local schema = require("ora.schema")
+  schema.fetch_ords_module_details(conn, module_name, function(d, err)
+    if err then
+      notify.error(nid, "Failed to load module details")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+    if not d then
+      notify.error(nid, "Module not found")
+      return
+    end
+
+    local lines = {
+      "BEGIN",
+      "  ORDS.DEFINE_MODULE(",
+      "    p_module_name    => '" .. d.name .. "',",
+      "    p_base_path      => '" .. d.uri_prefix .. "',",
+      "    p_items_per_page => " .. d.items_per_page .. ",",
+      "    p_status         => '" .. d.status .. "',",
+      "    p_comments       => " .. sql_str_or_null(d.comments),
+      "  );",
+      "  COMMIT;",
+      "END;",
+      "/",
+    }
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS " .. d.name .. " (Define Module)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-define-" .. d.name,
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Module DDL loaded")
+  end)
+end
+
+---Open a worksheet with an ORDS.DEFINE_TEMPLATE call, fetching details from user_ords_templates.
+M._open_ords_define_template = function(state, node)
+  local conn_name   = node.extra.conn_name
+  local template_id = node.extra.template_id
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading template details…")
+
+  local schema = require("ora.schema")
+  schema.fetch_ords_template_details(conn, template_id, function(d, err)
+    if err then
+      notify.error(nid, "Failed to load template details")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+    if not d then
+      notify.error(nid, "Template not found")
+      return
+    end
+
+    local lines = {
+      "BEGIN",
+      "  ORDS.DEFINE_TEMPLATE(",
+      "    p_module_name    => '" .. d.module_name .. "',",
+      "    p_pattern        => '" .. d.uri_template .. "',",
+      "    p_priority       => " .. d.priority .. ",",
+      "    p_etag_type      => '" .. d.etag_type .. "',",
+      "    p_etag_query     => " .. sql_str_or_null(d.etag_query) .. ",",
+      "    p_comments       => " .. sql_str_or_null(d.comments),
+      "  );",
+      "  COMMIT;",
+      "END;",
+      "/",
+    }
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS " .. d.module_name .. " " .. d.uri_template .. " (Define Template)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-define-tpl-" .. d.module_name .. "-" .. d.uri_template,
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Template DDL loaded")
+  end)
+end
+
+---Open a worksheet with an ORDS.DEFINE_HANDLER call, fetching details + source from user_ords_handlers.
+M._open_ords_define_handler = function(state, node)
+  local conn_name  = node.extra.conn_name
+  local handler_id = node.extra.handler_id
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading handler details…")
+
+  local schema = require("ora.schema")
+  local results = {}
+  local pending = 2
+
+  local function on_done()
+    pending = pending - 1
+    if pending > 0 then return end
+
+    local d = results.details
+    if not d then
+      notify.error(nid, "Handler not found")
+      return
+    end
+
+    local src_lines = results.source or {}
+    local lines = {
+      "BEGIN",
+      "  ORDS.DEFINE_HANDLER(",
+      "    p_module_name    => '" .. d.module_name .. "',",
+      "    p_pattern        => '" .. d.uri_template .. "',",
+      "    p_method         => '" .. d.method .. "',",
+      "    p_source_type    => '" .. d.source_type .. "',",
+      "    p_mimes_allowed  => " .. sql_str_or_null(d.mimes_allowed) .. ",",
+      "    p_comments       => " .. sql_str_or_null(d.comments) .. ",",
+      "    p_source         =>",
+    }
+
+    if #src_lines > 0 then
+      table.insert(lines, "      q'[")
+      for _, sl in ipairs(src_lines) do
+        table.insert(lines, sl)
+      end
+      table.insert(lines, "      ]'")
+    else
+      table.insert(lines, "      NULL")
+    end
+
+    vim.list_extend(lines, {
+      "  );",
+      "  COMMIT;",
+      "END;",
+      "/",
+    })
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS " .. d.module_name .. " " .. d.uri_template .. " " .. d.method .. " (Define Handler)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-define-hdl-" .. d.module_name .. "-" .. d.method,
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Handler DDL loaded")
+  end
+
+  schema.fetch_ords_handler_details(conn, handler_id, function(d, err)
+    if not err then results.details = d end
+    on_done()
+  end)
+
+  schema.fetch_ords_handler_source(conn, handler_id, function(src, _)
+    results.source = src or {}
+    on_done()
+  end)
+end
+
+---Open a worksheet with an ORDS.DEFINE_PARAMETER PL/SQL call for a parameter node.
+---@param state table
+---@param node table
+M._open_ords_define_parameter = function(state, node)
+  local conn_name    = node.extra.conn_name
+  local module_name  = node.extra.module_name
+  local uri_template = node.extra.uri_template
+  local method       = node.extra.method
+  local param_name   = node.name
+  local param_type   = node.extra.param_type
+  local source_type  = node.extra.source_type
+
+  local lines = {
+    "BEGIN",
+    "  ORDS.DEFINE_PARAMETER(",
+    "    p_module_name        => '" .. (module_name or "") .. "',",
+    "    p_pattern            => '" .. (uri_template or "") .. "',",
+    "    p_method             => '" .. (method or "") .. "',",
+    "    p_name               => '" .. param_name .. "',",
+    "    p_bind_variable_name => '" .. param_name .. "',",
+    "    p_source_type        => '" .. (source_type or "HEADER") .. "',",
+    "    p_param_type         => '" .. (param_type or "STRING") .. "',",
+    "    p_access_method      => 'IN'",
+    "  );",
+    "  COMMIT;",
+    "END;",
+    "/",
+  }
+
+  local ws_mod  = require("ora.worksheet")
+  local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+  local display = schema_name(state, conn_name) .. " ORDS " .. (module_name or "") .. " " .. param_name .. " (Define Parameter)"
+  local ws = ws_mod.create({
+    connection   = ws_conn,
+    name         = "ords-define-param-" .. (module_name or "") .. "-" .. param_name,
+    display_name = display,
+    icon         = "󰒍 ",
+  })
+
+  vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+  open_ws_in_main(ws)
+  format_buffer(ws.bufnr)
+end
+
+---Open the full DDL of an ORDS module in a new worksheet.
+---Fetches templates, handlers, and handler sources from user_ords_* tables,
+---then assembles ORDS.DEFINE_MODULE / DEFINE_TEMPLATE / DEFINE_HANDLER calls.
+M._open_ords_module_ddl = function(state, node)
+  local conn_name   = node.extra.conn_name
+  local module_name = node.name
+  local uri_prefix  = node.extra.uri_prefix or module_name
+  local module_id   = node.extra.module_id
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading module DDL…")
+
+  local schema = require("ora.schema")
+
+  -- Step 1: fetch all templates + handlers (without source CLOBs)
+  schema.fetch_ords_module_handlers(conn, module_id, function(rows, err)
+    if err then
+      notify.error(nid, "Failed to load module DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    rows = rows or {}
+
+    -- If no handlers, build DDL with just the module definition
+    if #rows == 0 then
+      local lines = {
+        "BEGIN",
+        "  ORDS.DEFINE_MODULE(",
+        "    p_module_name    => '" .. module_name .. "',",
+        "    p_base_path      => '" .. uri_prefix .. "',",
+        "    p_items_per_page => 25,",
+        "    p_status         => 'PUBLISHED',",
+        "    p_comments       => NULL",
+        "  );",
+        "",
+        "  COMMIT;",
+        "END;",
+        "/",
+      }
+      M._open_ords_ddl_worksheet(state, conn_name, module_name, lines)
+      notify.done(nid, "Module DDL loaded")
+      return
+    end
+
+    -- Step 2: fetch source for each handler in parallel
+    local sources = {}
+    local pending = #rows
+
+    local function on_done()
+      pending = pending - 1
+      if pending > 0 then return end
+
+      -- Step 3: assemble the full DDL
+      local lines = {
+        "BEGIN",
+        "  ORDS.DEFINE_MODULE(",
+        "    p_module_name    => '" .. module_name .. "',",
+        "    p_base_path      => '" .. uri_prefix .. "',",
+        "    p_items_per_page => 25,",
+        "    p_status         => 'PUBLISHED',",
+        "    p_comments       => NULL",
+        "  );",
+        "",
+      }
+
+      -- Group handlers by template
+      local seen_templates = {}
+      for _, row in ipairs(rows) do
+        if not seen_templates[row.uri_template] then
+          seen_templates[row.uri_template] = true
+          vim.list_extend(lines, {
+            "  ORDS.DEFINE_TEMPLATE(",
+            "    p_module_name    => '" .. module_name .. "',",
+            "    p_pattern        => '" .. row.uri_template .. "'",
+            "  );",
+            "",
+          })
+        end
+
+        local src_lines = sources[row.handler_id] or {}
+        local src_text = table.concat(src_lines, "\n")
+
+        vim.list_extend(lines, {
+          "  ORDS.DEFINE_HANDLER(",
+          "    p_module_name    => '" .. module_name .. "',",
+          "    p_pattern        => '" .. row.uri_template .. "',",
+          "    p_method         => '" .. row.method .. "',",
+          "    p_source_type    => '" .. row.source_type .. "',",
+          "    p_source         =>",
+        })
+
+        if #src_lines > 0 then
+          table.insert(lines, "      q'[")
+          for _, sl in ipairs(src_lines) do
+            table.insert(lines, sl)
+          end
+          table.insert(lines, "      ]'")
+        else
+          table.insert(lines, "      NULL")
+        end
+
+        vim.list_extend(lines, {
+          "  );",
+          "",
+        })
+      end
+
+      vim.list_extend(lines, {
+        "  COMMIT;",
+        "END;",
+        "/",
+      })
+
+      M._open_ords_ddl_worksheet(state, conn_name, module_name, lines)
+      notify.done(nid, "Module DDL loaded")
+    end
+
+    for i, row in ipairs(rows) do
+      schema.fetch_ords_handler_source(conn, row.handler_id, function(src_lines, _)
+        sources[row.handler_id] = src_lines or {}
+        on_done()
+      end)
+    end
+  end)
+end
+
+---Helper: open a worksheet with ORDS DDL lines.
+M._open_ords_ddl_worksheet = function(state, conn_name, module_name, lines)
+  local ws_mod  = require("ora.worksheet")
+  local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+  local display = schema_name(state, conn_name) .. " ORDS " .. module_name .. " (Module DDL)"
+  local ws = ws_mod.create({
+    connection   = ws_conn,
+    name         = "ords-module-" .. module_name,
+    display_name = display,
+    icon         = "󰒍 ",
+  })
+
+  vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+  open_ws_in_main(ws)
+  format_buffer(ws.bufnr)
+end
+
+---Export the full ORDS schema via ords_export_admin.export_schema.
+M._open_ords_export_schema = function(state, node)
+  local conn_name = node.extra.conn_name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Exporting ORDS schema…")
+
+  local schema = require("ora.schema")
+  schema.fetch_ords_export_schema(conn, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to export ORDS schema")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    if not lines or #lines == 0 then
+      notify.error(nid, "ORDS schema export returned no data")
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS (Schema Export)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-export-schema",
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "ORDS schema exported")
+  end)
+end
+
+---Export a single ORDS module via ORDS_METADATA.ORDS_EXPORT.EXPORT_MODULE.
+M._open_ords_export_module = function(state, node)
+  local conn_name   = node.extra.conn_name
+  local module_name = node.name
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Exporting ORDS module…")
+
+  local schema = require("ora.schema")
+  schema.fetch_ords_export_module(conn, module_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to export ORDS module")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    if not lines or #lines == 0 then
+      notify.error(nid, "ORDS module export returned no data")
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS " .. module_name .. " (Module Export)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-export-" .. module_name,
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "ORDS module exported")
+  end)
+end
+
+---Open the source code of an ORDS handler in a new worksheet.
+M._open_ords_handler_source = function(state, node)
+  local conn_name  = node.extra.conn_name
+  local handler_id = node.extra.handler_id
+  local method     = node.extra.method or "handler"
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading handler source…")
+
+  local schema = require("ora.schema")
+  schema.fetch_ords_handler_source(conn, handler_id, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load handler source")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. " ORDS " .. method .. " Handler"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = "ords-handler-" .. handler_id,
+      display_name = display,
+      icon         = "󰒍 ",
+    })
+
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Handler source loaded")
   end)
 end
 
@@ -878,18 +1751,10 @@ M.expand_node = function(state)
     if not node:is_expanded() then
       M._toggle_view(state, node)
     end
-  elseif node.type == "view_action" then
-    M._open_view_ddl(state, node)
-  elseif node.type == "table_action" then
-    M._open_table_action(state, node)
-  elseif node.type == "source_action" then
-    M._open_object_source(state, node)
   elseif node.type == "function" or node.type == "procedure" then
     if not node:is_expanded() then
       M._toggle_func_or_proc(state, node)
     end
-  elseif node.type == "package_part" then
-    M._open_package_source(state, node)
   elseif node.type == "package" then
     if not node:is_expanded() then
       M._toggle_package(state, node)
@@ -897,6 +1762,18 @@ M.expand_node = function(state)
   elseif node.type == "subprogram" then
     if not node:is_expanded() then
       M._toggle_subprogram(state, node)
+    end
+  elseif node.type == "ords_module" then
+    if not node:is_expanded() then
+      M._toggle_ords_module(state, node)
+    end
+  elseif node.type == "ords_template" then
+    if not node:is_expanded() then
+      M._toggle_ords_template(state, node)
+    end
+  elseif node.type == "ords_handler" then
+    if not node:is_expanded() then
+      M._toggle_ords_handler(state, node)
     end
   elseif node:has_children() and not node:is_expanded() then
     node:expand()
@@ -961,6 +1838,21 @@ M.refresh = function(state)
     node.extra.loaded = false
     M._clear_cached_node(state, node)
     M._toggle_func_or_proc(state, node)
+  elseif node.type == "ords_module" and node.extra and node.extra.loaded then
+    node:collapse()
+    node.extra.loaded = false
+    M._clear_cached_node(state, node)
+    M._toggle_ords_module(state, node)
+  elseif node.type == "ords_template" and node.extra and node.extra.loaded then
+    node:collapse()
+    node.extra.loaded = false
+    M._clear_cached_node(state, node)
+    M._toggle_ords_template(state, node)
+  elseif node.type == "ords_handler" and node.extra and node.extra.loaded then
+    node:collapse()
+    node.extra.loaded = false
+    M._clear_cached_node(state, node)
+    M._toggle_ords_handler(state, node)
   else
     refresh()
   end
@@ -992,49 +1884,365 @@ M.add_connection = function(state)
   require("ora").add_connection()
 end
 
----Open object: for packages show Spec/Body picker, for tables show DDL/Data picker,
----for functions/procedures open the Body directly.
-M.open_object = function(state)
+---Show a picker with context-appropriate actions for the current node.
+---Quick action: open the primary artifact for the current node.
+---Tables → DDL, Views → DDL, Functions/Procedures → Body, Packages → Specification.
+M.quick_open = function(state)
   local node = state.tree:get_node()
   if not node then return end
 
-  if node.type == "package" then
+  if node.type == "table" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, table_name = node.extra.table_name, action = "ddl", loading = false },
+    }
+    M._open_table_action(state, fake)
+  elseif node.type == "view" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, view_name = node.extra.view_name, action = "ddl", loading = false },
+    }
+    M._open_view_action(state, fake)
+  elseif node.type == "function" or node.type == "procedure" then
+    local object_type = node.type == "function" and "FUNCTION" or "PROCEDURE"
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, object_name = node.extra.object_name, object_type = object_type, loading = false },
+    }
+    M._open_object_source(state, fake)
+  elseif node.type == "package" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, pkg_name = node.extra.pkg_name, part = "spec", loading = false },
+    }
+    M._open_package_source(state, fake)
+  elseif node.type == "synonym" then
+    M._open_synonym_ddl(state, node)
+  elseif node.type == "schema_index" then
+    M._open_index_ddl(state, node)
+  elseif node.type == "trigger" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, object_name = node.extra.trigger_name, object_type = "TRIGGER", loading = false },
+    }
+    M._open_object_source(state, fake)
+  elseif node.type == "sequence" then
+    M._open_sequence_ddl(state, node)
+  elseif node.type == "ords_module" then
+    M._open_ords_define_module(state, node)
+  elseif node.type == "ords_template" then
+    M._open_ords_define_template(state, node)
+  elseif node.type == "ords_handler" then
+    M._open_ords_define_handler(state, node)
+  elseif node.type == "ords_parameter" then
+    M._open_ords_define_parameter(state, node)
+  end
+end
+
+---Secondary quick action: open the secondary artifact for the current node.
+---Tables → Data, Views → Data, Packages → Body, ORDS modules → Full export,
+---ORDS handlers → Handler source.
+M.quick_open_alt = function(state)
+  local node = state.tree:get_node()
+  if not node then return end
+
+  if node.type == "table" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, table_name = node.extra.table_name, action = "data", loading = false },
+    }
+    M._open_table_action(state, fake)
+  elseif node.type == "view" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, view_name = node.extra.view_name, action = "data", loading = false },
+    }
+    M._open_view_action(state, fake)
+  elseif node.type == "package" then
     local conn_name = node.extra.conn_name
     local pkg_name  = node.extra.pkg_name
-    vim.ui.select({ "Specification", "Body" }, { prompt = pkg_name .. ":" }, function(choice)
-      if not choice then return end
-      local part = choice == "Specification" and "spec" or "body"
+    if node.extra.has_body then
       local fake = {
-        extra = { conn_name = conn_name, pkg_name = pkg_name, part = part, loading = false },
+        extra = { conn_name = conn_name, pkg_name = pkg_name, part = "body", loading = false },
       }
       M._open_package_source(state, fake)
+    else
+      local ws_mod = require("ora.worksheet")
+      local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+      local display = schema_name(state, conn_name) .. "." .. pkg_name .. " (Package Body)"
+      local ws = ws_mod.create({
+        connection   = ws_conn,
+        name         = pkg_name .. "-body",
+        display_name = display,
+        icon         = "󰏗 ",
+      })
+      vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+      open_ws_in_main(ws)
+    end
+  elseif node.type == "ords_module" then
+    M._open_ords_export_module(state, node)
+  elseif node.type == "ords_handler" then
+    M._open_ords_handler_source(state, node)
+  end
+end
+
+---Show a picker with context-appropriate actions for the current node.
+M.show_actions = function(state)
+  local node = state.tree:get_node()
+  if not node then return end
+
+  if node.type == "connection" then
+    local name = node.extra.key
+    local connected = state.ora_connected and state.ora_connected[name] or false
+    local actions = {}
+    if not connected then
+      table.insert(actions, "Connect")
+    else
+      table.insert(actions, "Disconnect")
+    end
+    table.insert(actions, "Show connection string")
+    action_picker(name, actions, function(choice)
+      if choice == "Connect" then
+        vim.schedule(function()
+          local fresh_node = state.tree and state.tree:get_node("conn:" .. name)
+          if fresh_node then
+            M._toggle_connection(state, fresh_node)
+          end
+        end)
+      elseif choice == "Disconnect" then
+        state.ora_connected[name] = false
+        if state.ora_children then state.ora_children[name] = nil end
+        if state.ora_schema then state.ora_schema[name] = nil end
+        node:collapse()
+        local ora_source = require("neo-tree.sources.ora")
+        ora_source.navigate(state)
+        local notify = require("ora.notify")
+        notify.done("ora_conn", "Disconnected from " .. name)
+      elseif choice == "Show connection string" then
+        local notify = require("ora.notify")
+        local nid = "ora_connstr"
+        notify.progress(nid, "Fetching connection info…")
+        vim.schedule(function()
+          local info = require("ora.connmgr").show(name)
+          if not info then
+            notify.error(nid, "Could not fetch connection info")
+            return
+          end
+          notify.done(nid, "Connection info loaded")
+          local buf = vim.api.nvim_create_buf(false, true)
+          vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            "-- Connection: " .. name,
+            "-- User: " .. (info.user or "?"),
+            info.connect_string or "",
+          })
+          vim.api.nvim_buf_set_option(buf, "bufhidden", "wipe")
+          vim.api.nvim_buf_set_option(buf, "filetype", "sql")
+          local wins = vim.api.nvim_tabpage_list_wins(0)
+          local target_win
+          for _, win in ipairs(wins) do
+            local cfg = vim.api.nvim_win_get_config(win)
+            if cfg.relative == "" then
+              local wbuf = vim.api.nvim_win_get_buf(win)
+              local bname = vim.api.nvim_buf_get_name(wbuf)
+              if not bname:match("neo%-tree") then
+                target_win = win
+                break
+              end
+            end
+          end
+          if target_win then
+            vim.api.nvim_win_set_buf(target_win, buf)
+            vim.api.nvim_set_current_win(target_win)
+          else
+            vim.cmd("wincmd l")
+            vim.api.nvim_win_set_buf(0, buf)
+          end
+        end)
+      end
+    end)
+  elseif node.type == "package" then
+    local conn_name = node.extra.conn_name
+    local pkg_name  = node.extra.pkg_name
+    local has_body  = node.extra.has_body
+    local actions = { "Show specification" }
+    if has_body then
+      table.insert(actions, "Show body")
+    else
+      table.insert(actions, "Add body")
+    end
+    table.insert(actions, "Drop package")
+    if has_body then
+      table.insert(actions, "Drop package body")
+    end
+    action_picker(pkg_name, actions, function(choice)
+      if choice == "Show specification" or choice == "Show body" then
+        local part = choice == "Show specification" and "spec" or "body"
+        local fake = {
+          extra = { conn_name = conn_name, pkg_name = pkg_name, part = part, loading = false },
+        }
+        M._open_package_source(state, fake)
+      elseif choice == "Add body" then
+        local ws_mod = require("ora.worksheet")
+        local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+        local display = schema_name(state, conn_name) .. "." .. pkg_name .. " (Package Body)"
+        local ws = ws_mod.create({
+          connection   = ws_conn,
+          name         = pkg_name .. "-body",
+          display_name = display,
+          icon         = "󰏗 ",
+        })
+        vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+        open_ws_in_main(ws)
+      elseif choice == "Drop package" then
+        open_drop_worksheet(state, conn_name, pkg_name, "PACKAGE")
+      elseif choice == "Drop package body" then
+        open_drop_worksheet(state, conn_name, pkg_name, "PACKAGE BODY")
+      end
     end)
   elseif node.type == "table" then
     local conn_name  = node.extra.conn_name
     local table_name = node.extra.table_name
-    vim.ui.select({ "DDL", "Data" }, { prompt = table_name .. ":" }, function(choice)
-      if not choice then return end
-      local action = choice == "DDL" and "ddl" or "data"
-      local fake = {
-        extra = { conn_name = conn_name, table_name = table_name, action = action, loading = false },
-      }
-      M._open_table_action(state, fake)
+    action_picker(table_name, { "Show DDL", "Show data", "Drop table" }, function(choice)
+      if choice == "Show DDL" or choice == "Show data" then
+        local action = choice == "Show DDL" and "ddl" or "data"
+        local fake = {
+          extra = { conn_name = conn_name, table_name = table_name, action = action, loading = false },
+        }
+        M._open_table_action(state, fake)
+      elseif choice == "Drop table" then
+        open_drop_worksheet(state, conn_name, table_name, "TABLE")
+      end
     end)
   elseif node.type == "view" then
     local conn_name = node.extra.conn_name
     local view_name = node.extra.view_name
-    local fake = {
-      extra = { conn_name = conn_name, view_name = view_name, loading = false },
-    }
-    M._open_view_ddl(state, fake)
+    action_picker(view_name, { "Show DDL", "Show data", "Drop view" }, function(choice)
+      if choice == "Show DDL" or choice == "Show data" then
+        local action = choice == "Show DDL" and "ddl" or "data"
+        local fake = {
+          extra = { conn_name = conn_name, view_name = view_name, action = action, loading = false },
+        }
+        M._open_view_action(state, fake)
+      elseif choice == "Drop view" then
+        open_drop_worksheet(state, conn_name, view_name, "VIEW")
+      end
+    end)
+  elseif node.type == "synonym" then
+    local conn_name    = node.extra.conn_name
+    local synonym_name = node.extra.synonym_name
+    action_picker(synonym_name, { "Show DDL", "Drop synonym" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_synonym_ddl(state, node)
+      elseif choice == "Drop synonym" then
+        open_drop_worksheet(state, conn_name, synonym_name, "SYNONYM")
+      end
+    end)
+  elseif node.type == "schema_index" then
+    local conn_name  = node.extra.conn_name
+    local index_name = node.extra.index_name
+    action_picker(index_name, { "Show DDL", "Drop index" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_index_ddl(state, node)
+      elseif choice == "Drop index" then
+        open_drop_worksheet(state, conn_name, index_name, "INDEX")
+      end
+    end)
+  elseif node.type == "sequence" then
+    local conn_name     = node.extra.conn_name
+    local sequence_name = node.extra.sequence_name
+    action_picker(sequence_name, { "Show DDL", "Drop sequence" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_sequence_ddl(state, node)
+      elseif choice == "Drop sequence" then
+        open_drop_worksheet(state, conn_name, sequence_name, "SEQUENCE")
+      end
+    end)
   elseif node.type == "function" or node.type == "procedure" then
     local conn_name   = node.extra.conn_name
     local object_name = node.extra.object_name
     local object_type = node.type == "function" and "FUNCTION" or "PROCEDURE"
-    local fake = {
-      extra = { conn_name = conn_name, object_name = object_name, object_type = object_type, loading = false },
-    }
-    M._open_object_source(state, fake)
+    local label = object_type:sub(1, 1) .. object_type:sub(2):lower()
+    action_picker(object_name, { "Show body", "Drop " .. label:lower() }, function(choice)
+      if choice == "Show body" then
+        local fake = {
+          extra = { conn_name = conn_name, object_name = object_name, object_type = object_type, loading = false },
+        }
+        M._open_object_source(state, fake)
+      else
+        open_drop_worksheet(state, conn_name, object_name, object_type)
+      end
+    end)
+  elseif node.type == "trigger" then
+    local conn_name    = node.extra.conn_name
+    local trigger_name = node.extra.trigger_name
+    action_picker(trigger_name, { "Show DDL", "Drop trigger" }, function(choice)
+      if choice == "Show DDL" then
+        local schema = require("ora.schema")
+        local conn = { key = conn_name, is_named = true }
+        local notify = require("ora.notify")
+        local nid = "ora_open"
+        notify.progress(nid, "Loading trigger DDL…")
+        schema.fetch_object_ddl(conn, "TRIGGER", trigger_name, function(lines, err)
+          if err then
+            notify.error(nid, "Failed to load trigger DDL")
+            vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+            return
+          end
+          local ws_mod  = require("ora.worksheet")
+          local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+          local display = schema_name(state, conn_name) .. "." .. trigger_name .. " (Trigger DDL)"
+          local ws = ws_mod.create({
+            connection   = ws_conn,
+            name         = trigger_name .. "-ddl",
+            display_name = display,
+            icon         = "󱐋 ",
+          })
+          local buf_lines = {}
+          for _, line in ipairs(lines or {}) do
+            line = line:gsub("%s+$", "")
+            for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+              table.insert(buf_lines, seg)
+            end
+          end
+          vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+          vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+          open_ws_in_main(ws)
+          format_buffer(ws.bufnr)
+          notify.done(nid, "Trigger DDL loaded")
+        end)
+      elseif choice == "Drop trigger" then
+        open_drop_worksheet(state, conn_name, trigger_name, "TRIGGER")
+      end
+    end)
+  elseif node.type == "category" and node.extra.category == "ords" then
+    action_picker("ORDS", { "Export schema" }, function(choice)
+      if choice == "Export schema" then
+        local fake = { extra = { conn_name = node.extra.conn_name } }
+        M._open_ords_export_schema(state, fake)
+      end
+    end)
+  elseif node.type == "ords_module" then
+    local module_name = node.name
+    action_picker(module_name, { "Define module", "Export module" }, function(choice)
+      if choice == "Define module" then
+        M._open_ords_define_module(state, node)
+      elseif choice == "Export module" then
+        M._open_ords_export_module(state, node)
+      end
+    end)
+  elseif node.type == "ords_template" then
+    local uri_template = node.name
+    action_picker(uri_template, { "Define template" }, function(choice)
+      if choice == "Define template" then
+        M._open_ords_define_template(state, node)
+      end
+    end)
+  elseif node.type == "ords_handler" then
+    local method = node.extra.method or "handler"
+    action_picker(method, { "Define handler" }, function(choice)
+      if choice == "Define handler" then
+        M._open_ords_define_handler(state, node)
+      end
+    end)
+  elseif node.type == "ords_parameter" then
+    action_picker(node.name, { "Define parameter" }, function(choice)
+      if choice == "Define parameter" then
+        M._open_ords_define_parameter(state, node)
+      end
+    end)
   end
 end
 

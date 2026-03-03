@@ -73,17 +73,22 @@ function M.execute_worksheet()
 
   local function do_run()
     local result = require("ora.result")
+    local notify = require("ora.notify")
+    local nid = "ora_exec"
     local rbuf = result.get_or_create_buf(ws)
     result.set_buf_lines(rbuf, { "-- running…" })
     result.show(rbuf)
+    notify.progress(nid, "Executing query…")
     result.run(ws, function(lines, hl_data, err)
       if err then
         result.set_buf_lines(rbuf, { "-- ERROR: " .. err })
+        notify.error(nid, "Query failed")
         return
       end
       local sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
       result.push_history(ws, sql, lines)
       result.set_buf_content(rbuf, lines, hl_data)
+      notify.done(nid, "Query complete")
     end)
   end
 
@@ -150,6 +155,15 @@ function M.change_worksheet_connection()
     ws.connection = conn
     ws_mod.refresh_winbar(ws)
   end)
+end
+
+---Open the quick action picker: find objects by pattern and act on them.
+function M.quick_action()
+  if not _setup_done then
+    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    return
+  end
+  require("ora.ui.quick_action").open()
 end
 
 ---Open the neo-tree Oracle connections/schemas explorer.

@@ -24,17 +24,35 @@ local M = {}
 local _list = {}
 local _counter = 0
 
+-- Icon text → highlight group, matching the neo-tree explorer icons.
+local icon_highlights = {
+  ["󰆼 "]  = "Special",        -- connection / default
+  ["󰓫 "]  = "Type",           -- table
+  ["󰡠 "]  = "Type",           -- view
+  ["󰊕 "]  = "Function",       -- function
+  ["󰡱 "]  = "Function",       -- procedure
+  ["󰏗 "]  = "OraIconPackage", -- package (orange)
+  ["󰔖 "]  = "Type",           -- synonym
+  ["󰌹 "]  = "Number",         -- index
+  ["󰔚 "]  = "Number",         -- sequence
+  ["󰒍 "]  = "Type",           -- ords
+  ["󱐋 "]  = "Keyword",         -- trigger
+  ["󰆴 "]  = "DiagnosticError", -- drop
+}
+
 ---Refresh the winbar for every window currently showing this worksheet.
 ---Shows the connection name, or "[no connection]" when none is set.
 ---@param ws OraWorksheet
 function M.refresh_winbar(ws)
   local conn_label = ws.connection and ws.connection.label or "[no connection]"
-  -- Escape % so the string is treated as literal text by the statusline renderer.
   local ws_name = ws.display_name or ws.name
   local icon = ws.icon or "󰆼 "
-  local left  = ("  " .. icon .. ws_name):gsub("%%", "%%%%")
-  local right = (conn_label .. "  "):gsub("%%", "%%%%")
-  local text  = left .. "%=" .. right
+  local icon_hl = icon_highlights[icon] or "Special"
+  -- Escape % in user-supplied strings so the statusline renderer treats them as literal.
+  local safe_name  = ws_name:gsub("%%", "%%%%")
+  local safe_conn  = conn_label:gsub("%%", "%%%%")
+  -- Use %#HlGroup# statusline syntax for colored icon, then %* to reset.
+  local text = "  %#" .. icon_hl .. "#" .. icon .. "%*" .. safe_name .. "%=" .. safe_conn .. "  "
   for _, win in ipairs(vim.fn.win_findbuf(ws.bufnr)) do
     vim.api.nvim_win_set_option(win, "winbar", text)
   end

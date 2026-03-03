@@ -17,7 +17,14 @@ local function fresh_picker()
 end
 
 local function stub_connmgr(names)
-  package.loaded["ora.connmgr"] = { list = function() return names end }
+  local tree = {}
+  for _, n in ipairs(names) do
+    table.insert(tree, { name = n, type = "connection" })
+  end
+  package.loaded["ora.connmgr"] = {
+    list = function() return names end,
+    list_tree = function() return tree end,
+  }
 end
 
 local function float_wins()

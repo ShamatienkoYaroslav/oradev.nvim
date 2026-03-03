@@ -53,11 +53,17 @@ function M.connect(url, label, opts)
     cmd = string.format("%s %s", config.values.sqlcl_path, url)
   end
 
+  local notify = require("ora.notify")
+  local nid = "ora_conn_" .. label
+
   vim.fn.termopen(cmd, {
     on_exit = function()
       sessions[url] = nil
+      notify.done(nid, "Disconnected from " .. label)
     end,
   })
+
+  notify.progress(nid, "Connecting to " .. label .. "…")
 
   local buf_name = string.format("ora://%s", label)
   pcall(vim.api.nvim_buf_set_name, bufnr, buf_name)

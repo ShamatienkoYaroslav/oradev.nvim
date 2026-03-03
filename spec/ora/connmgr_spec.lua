@@ -66,6 +66,107 @@ describe("ora.connmgr", function()
     end)
   end)
 
+  -- ─── list_tree() ────────────────────────────────────────────────────────────
+
+  describe("list_tree()", function()
+    it("returns flat connections when no tree chars present", function()
+      stub_job_sync("dev\nstaging\nprod")
+      local tree = fresh().list_tree()
+      assert.same({
+        { name = "dev",     type = "connection" },
+        { name = "staging", type = "connection" },
+        { name = "prod",    type = "connection" },
+      }, tree)
+    end)
+
+    it("parses folder structure from ASCII tree output", function()
+      stub_job_sync(table.concat({
+        ".",
+        "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 dev",
+        "\xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 local-free",
+        "\xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 local-xe",
+        "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 prod",
+        "    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 main-db",
+      }, "\n"))
+      local tree = fresh().list_tree()
+      assert.same({
+        {
+          name = "dev",
+          type = "folder",
+          children = {
+            { name = "local-free", type = "connection" },
+            { name = "local-xe",   type = "connection" },
+          },
+        },
+        {
+          name = "prod",
+          type = "folder",
+          children = {
+            { name = "main-db", type = "connection" },
+          },
+        },
+      }, tree)
+    end)
+
+    it("handles mixed root connections and folders", function()
+      stub_job_sync(table.concat({
+        ".",
+        "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 standalone",
+        "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 dev",
+        "    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 local-free",
+      }, "\n"))
+      local tree = fresh().list_tree()
+      assert.same({
+        { name = "standalone", type = "connection" },
+        {
+          name = "dev",
+          type = "folder",
+          children = {
+            { name = "local-free", type = "connection" },
+          },
+        },
+      }, tree)
+    end)
+
+    it("handles nested folders", function()
+      stub_job_sync(table.concat({
+        ".",
+        "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 env",
+        "    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 dev",
+        "        \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 local-free",
+      }, "\n"))
+      local tree = fresh().list_tree()
+      assert.same({
+        {
+          name = "env",
+          type = "folder",
+          children = {
+            {
+              name = "dev",
+              type = "folder",
+              children = {
+                { name = "local-free", type = "connection" },
+              },
+            },
+          },
+        },
+      }, tree)
+    end)
+
+    it("returns empty list when output is empty", function()
+      stub_job_sync("")
+      assert.same({}, fresh().list_tree())
+    end)
+
+    it("strips ANSI codes from tree output", function()
+      stub_job_sync("\27[1m.\27[0m\n\27[1m\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 dev\27[0m")
+      local tree = fresh().list_tree()
+      assert.same({
+        { name = "dev", type = "connection" },
+      }, tree)
+    end)
+  end)
+
   -- ─── show() ───────────────────────────────────────────────────────────────
 
   describe("show()", function()

@@ -44,6 +44,99 @@ end
 
 -- ─── public API ───────────────────────────────────────────────────────────────
 
+---@class ConnmgrTreeEntry
+---@field name string
+---@field type "folder"|"connection"
+---@field children ConnmgrTreeEntry[]|nil
+
+---Parse the ASCII tree output from `connmgr list` into a hierarchical structure.
+---Folders are detected by having a deeper item following them.
+---@return ConnmgrTreeEntry[]
+function M.list_tree()
+  local out = (run({ "connmgr list" }))
+  local entries = {} ---@type {name: string, depth: integer}[]
+
+  for line in out:gmatch("[^\n\r]+") do
+    -- Strip ANSI codes
+    line = line:gsub("\27%[[%d;]*[mABCDHJKSTfilhsu]", "")
+    -- Strip SQL> prompt
+    line = line:gsub("^SQL>%s*", "")
+
+    -- Skip empty, banner, and noise lines (same filters as list())
+    local trimmed = line:match("^%s*(.-)%s*$") or ""
+    if  trimmed == ""
+    or  trimmed:match("^%-%-")
+    or  trimmed:match("^=+")
+    or  trimmed:match(":$")
+    or  trimmed:match("^Connecting")
+    or  trimmed:match("^SQLcl")
+    or  trimmed:match("^Oracle")
+    or  trimmed:match("^Copyright")
+    or  trimmed:match("^All%s")
+    or  trimmed == "."
+    then
+      goto continue
+    end
+
+    -- Determine depth from position of the tree branch chars (├ └) or the name itself.
+    -- Each depth level is ~4 chars of indent in the tree output.
+    -- Find the position of ├ or └ (UTF-8: \xe2\x94\x9c or \xe2\x94\x94)
+    local branch_pos = line:find("\xe2\x94\x9c") or line:find("\xe2\x94\x94")
+    local depth
+    if branch_pos then
+      depth = math.floor((branch_pos - 1) / 4)
+    else
+      -- No tree chars — top-level flat name
+      depth = 0
+    end
+
+    -- Extract the name: strip tree drawing chars and whitespace
+    local name = line:gsub("[^\1-\127]", ""):match("^%s*(.-)%s*$") or ""
+    if name ~= "" then
+      table.insert(entries, { name = name, depth = depth })
+    end
+
+    ::continue::
+  end
+
+  -- Build tree: an item is a folder if the next item has greater depth
+  local function build(list, start, parent_depth)
+    local result = {}
+    local i = start
+    while i <= #list do
+      local entry = list[i]
+      if entry.depth <= parent_depth then
+        break -- back to parent level
+      end
+      if entry.depth == parent_depth + 1 then
+        -- Check if next entry is a child (folder)
+        local is_folder = (i + 1 <= #list) and (list[i + 1].depth > entry.depth)
+        if is_folder then
+          local children, next_i = build(list, i + 1, entry.depth)
+          table.insert(result, {
+            name     = entry.name,
+            type     = "folder",
+            children = children,
+          })
+          i = next_i
+        else
+          table.insert(result, {
+            name = entry.name,
+            type = "connection",
+          })
+          i = i + 1
+        end
+      else
+        i = i + 1
+      end
+    end
+    return result, i
+  end
+
+  local tree = build(entries, 1, -1)
+  return tree
+end
+
 ---Return all connection names stored in the SQLcl connection manager.
 ---@return string[]
 function M.list()

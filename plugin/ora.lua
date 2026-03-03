@@ -1,6 +1,9 @@
 if vim.g.loaded_ora then return end
 vim.g.loaded_ora = true
 
+-- Icon highlight groups (default = true so colorschemes can override)
+vim.api.nvim_set_hl(0, "OraIconPackage", { fg = "#d19a66", default = true })
+
 vim.api.nvim_create_user_command("OraConnectionsList", function()
   require("ora").list()
 end, { desc = "List saved Oracle connections (from SQLcl connmgr) and connect" })
@@ -41,6 +44,10 @@ end, { desc = "Format the current worksheet SQL using SQLcl" })
 vim.api.nvim_create_user_command("OraWorksheetChangeConnection", function()
   require("ora").change_worksheet_connection()
 end, { desc = "Change the connection for the current worksheet" })
+
+vim.api.nvim_create_user_command("OraQuickAction", function()
+  require("ora").quick_action()
+end, { desc = "Find schema objects by pattern and act on them" })
 
 vim.api.nvim_create_user_command("OraExplorer", function()
   local ok = pcall(require, "neo-tree")

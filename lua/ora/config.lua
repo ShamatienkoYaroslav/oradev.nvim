@@ -1,15 +1,26 @@
 local M = {}
 
 ---@class OraConfig
----@field sqlcl_path string  Path to the sqlcl executable
----@field win_width  integer Width of the picker floating window (columns)
----@field win_height integer Height of the picker floating window (rows)
+---@field sqlcl_path          string                   Path to the sqlcl executable
+---@field win_width           integer                  Width of the picker floating window (columns)
+---@field win_height          integer                  Height of the picker floating window (rows)
+---@field explorer_mappings   table<string, string>    Key → command mappings for the schema explorer
 
 ---@type OraConfig
 local defaults = {
   sqlcl_path = "sql",
   win_width  = 60,
   win_height = 20,
+  explorer_mappings = {
+    ["<cr>"] = "toggle_node",
+    ["l"]    = "expand_node",
+    ["h"]    = "collapse_node",
+    ["r"]    = "refresh",
+    ["o"]    = "quick_open",
+    ["O"]    = "quick_open_alt",
+    ["a"]    = "show_actions",
+    ["A"]    = "add_connection",
+  },
 }
 
 ---@type OraConfig
