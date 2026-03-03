@@ -8,7 +8,7 @@ local M = {}
 
 -- Icons for each node type
 local icons = {
-  folder           = { text = " ", hl = "Directory" },
+  folder           = { text = "󰉖 ", hl = "Directory" },
   connection       = { text = "󰆼 ", hl = "Special" },
   connection_on    = { text = "󰆼 ", hl = "DiagnosticOk" },
   category         = { text = "󰉋 ", hl = "Directory" },
@@ -27,6 +27,7 @@ local icons = {
   subprogram       = { text = "󰊕 ", hl = "Function" },
   parameter        = { text = "󰆧 ", hl = "Identifier" },
   trigger          = { text = "󱐋 ", hl = "Keyword" },
+  ora_type         = { text = "󰕳 ", hl = "Type" },
   message          = { text = "󰍡 ", hl = "Comment" },
   sequence         = { text = "󰔚 ", hl = "Number" },
   ords_module      = { text = "󰒍 ", hl = "Type" },
@@ -109,6 +110,8 @@ M.name = function(config, node, state)
     highlight = highlights.FILE_NAME
   elseif node.type == "trigger" then
     highlight = highlights.FILE_NAME
+  elseif node.type == "ora_type" then
+    highlight = highlights.DIRECTORY_NAME
   elseif node.type == "ords_module" then
     highlight = highlights.FILE_NAME
   elseif node.type == "ords_template" then
@@ -137,6 +140,8 @@ M.comment = function(config, node, state)
     cmt = node.extra and node.extra.detail
   elseif node.type == "trigger" then
     cmt = node.extra and node.extra.table_name
+  elseif node.type == "ora_type" then
+    cmt = node.extra and node.extra.typecode
   end
   if not cmt or cmt == "" then return { text = "" } end
   return { text = " " .. cmt, highlight = highlights.DIM_TEXT }

@@ -156,6 +156,14 @@ function M.make_category_stubs(conn_name)
       extra    = { category = "triggers", conn_name = conn_name, loaded = false },
     },
     {
+      id       = "cat:" .. conn_name .. ":Types",
+      name     = "Types",
+      type     = "category",
+      path     = conn_name .. "/Types",
+      children = {},
+      extra    = { category = "types", conn_name = conn_name, loaded = false },
+    },
+    {
       id       = "cat:" .. conn_name .. ":Sequences",
       name     = "Sequences",
       type     = "category",
@@ -521,6 +529,29 @@ function M.make_trigger_children(conn_name, triggers)
         trigger_name = t.name,
         table_name   = t.table_name,
         trigger_type = t.trigger_type,
+      },
+    })
+  end
+  return children
+end
+
+---Build child nodes for user-defined types.
+---@param conn_name string
+---@param types     {name: string, typecode: string}[]
+---@return table[]
+function M.make_type_children(conn_name, types)
+  local children = {}
+  for _, t in ipairs(types) do
+    table.insert(children, {
+      id       = "typ:" .. conn_name .. ":" .. t.name,
+      name     = t.name,
+      type     = "ora_type",
+      path     = conn_name .. "/Types/" .. t.name,
+      children = {},
+      extra    = {
+        conn_name = conn_name,
+        type_name = t.name,
+        typecode  = t.typecode,
       },
     })
   end

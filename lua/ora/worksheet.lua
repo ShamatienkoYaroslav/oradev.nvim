@@ -37,6 +37,7 @@ local icon_highlights = {
   ["󰔚 "]  = "Number",         -- sequence
   ["󰒍 "]  = "Type",           -- ords
   ["󱐋 "]  = "Keyword",         -- trigger
+  ["󰕳 "]  = "Type",            -- type
   ["󰆴 "]  = "DiagnosticError", -- drop
 }
 

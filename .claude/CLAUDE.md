@@ -79,6 +79,8 @@ Uses `plenary.Job:start()` for async queries. Functions include:
 - `fetch_synonym_ddl` — `DBMS_METADATA.GET_DDL` for synonyms
 - `fetch_sequences` — `user_sequences` (multi-column: name, min_value, max_value, increment_by, last_number)
 - `fetch_triggers` — `user_triggers` (multi-column: name, table_name, trigger_type)
+- `fetch_type_has_body` — checks for `TYPE BODY` in `user_objects`
+- `fetch_types` — `user_types` (multi-column: name, typecode)
 - `fetch_source` — `user_source` (package spec/body, function/procedure body)
 - `fetch_ddl` — `DBMS_METADATA.GET_DDL`
 - `fetch_objects_by_pattern` — `user_objects` filtered by LIKE pattern (multi-column: name, object_type)
@@ -101,7 +103,7 @@ source plugin pattern:
 
 `lua/neo-tree/sources/ora/init.lua` — source entry point with `navigate()` and
 `setup()`. Defines `default_renderers` for all custom node types (connection,
-category, table, column, index, constraint, schema_index, synonym, trigger, function, procedure, package,
+category, table, column, index, constraint, schema_index, synonym, trigger, ora_type, function, procedure, package,
 package_part, subprogram, parameter, table_action, source_action, message).
 Renderers are injected into `state.renderers` during navigate.
 
@@ -156,7 +158,7 @@ in `state.ora_children`. Builder functions: `make_table_children`,
 `make_column_children`, `make_index_children`, `make_constraint_children`,
 `make_function_children`, `make_procedure_children`, `make_package_children`,
 `make_subprogram_children`, `make_parameter_children`, `make_object_parameter_children`,
-`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_ords_module_children`, `make_ords_template_children`,
+`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_type_children`, `make_ords_module_children`, `make_ords_template_children`,
 `make_ords_handler_children`, `make_ords_parameter_children`.
 
 ### Neo-tree state
@@ -179,6 +181,7 @@ The explorer stores state on the neo-tree state object:
 - `synonym` — `{conn_name, synonym_name, target_owner, target_name, db_link, target}`
 - `sequence` — `{conn_name, sequence_name, min_value, max_value, increment_by, last_number, detail}`
 - `trigger` — `{conn_name, trigger_name, table_name, trigger_type}`
+- `ora_type` — `{conn_name, type_name, typecode, has_body, loaded}`
 - `function` — `{conn_name, object_name, return_type, loaded}`
 - `procedure` — `{conn_name, object_name, loaded}`
 - `package` — `{conn_name, pkg_name, loaded}`

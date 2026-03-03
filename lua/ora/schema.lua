@@ -1498,7 +1498,7 @@ function M.fetch_objects_by_pattern(conn, pattern, callback)
   local sql = string.format(
     "SELECT object_name, object_type FROM user_objects " ..
     "WHERE object_name LIKE '%s' " ..
-    "AND object_type IN ('TABLE','VIEW','INDEX','SYNONYM','FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY') " ..
+    "AND object_type IN ('TABLE','VIEW','INDEX','SYNONYM','SEQUENCE','TRIGGER','TYPE','TYPE BODY','FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY') " ..
     "ORDER BY object_type, object_name",
     pattern
   )
@@ -1560,6 +1560,46 @@ function M.fetch_triggers(conn, callback)
         end
       end
       callback(triggers, nil)
+    end)
+end
+
+---Check whether a TYPE BODY exists for a given type.
+---@param conn      {key: string, is_named: boolean}
+---@param type_name string
+---@param callback  fun(has_body: boolean, err: string|nil)
+function M.fetch_type_has_body(conn, type_name, callback)
+  run_query(conn, string.format(
+    "SELECT object_name FROM user_objects WHERE object_name = '%s' AND object_type = 'TYPE BODY'",
+    type_name
+  ), function(names, err)
+    if err then
+      callback(false, err)
+    else
+      callback(names ~= nil and #names > 0, nil)
+    end
+  end)
+end
+
+---Fetch user-defined types from user_types.
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(types: {name: string, typecode: string}[]|nil, err: string|nil)
+function M.fetch_types(conn, callback)
+  run_multi_query(conn,
+    "SELECT type_name, typecode FROM user_types ORDER BY type_name",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local types = {}
+      for _, item in ipairs(items or {}) do
+        local name = item.TYPE_NAME or item.type_name
+        local code = item.TYPECODE  or item.typecode
+        if name and name ~= vim.NIL then
+          table.insert(types, {
+            name     = tostring(name),
+            typecode = (code and code ~= vim.NIL) and tostring(code) or "",
+          })
+        end
+      end
+      callback(types, nil)
     end)
 end
 

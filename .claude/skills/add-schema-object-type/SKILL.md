@@ -17,7 +17,9 @@ Uses "triggers" as the running example — substitute your own type throughout.
 | 3   | `lua/neo-tree/sources/ora/components.lua` | Icon, name highlight, comment/return_type (if needed)               |
 | 4   | `lua/neo-tree/sources/ora/init.lua`       | Renderer entry in `default_renderers`                               |
 | 5   | `lua/neo-tree/sources/ora/commands.lua`   | Category dispatch, toggle, keybinding handlers, action picker       |
-| 6   | `.claude/CLAUDE.md`                       | Document the new node type, extra fields, schema function, commands |
+| 6   | `lua/ora/ui/quick_action.lua`             | Icon, icon highlight, actions, metadata type                        |
+| 7   | `lua/ora/schema.lua` (`fetch_objects_by_pattern`) | Add type to the `IN (...)` clause if not already present  |
+| 8   | `.claude/CLAUDE.md`                       | Document the new node type, extra fields, schema function, commands |
 
 ---
 
@@ -285,7 +287,78 @@ needs its own refresh (re-fetch children), add it to the `refresh` function.
 
 ---
 
-## Step 6 — Update CLAUDE.md
+## Step 6 — Quick Action picker (`lua/ora/ui/quick_action.lua`)
+
+The Quick Action flow (`OraQuickAction`) uses `Snacks.picker` to fuzzy-search all
+schema objects. When adding a new object type, update these tables at the top of the file:
+
+### 6a — `icons` table
+
+Add an entry matching the explorer icon from `components.lua`:
+
+```lua
+TRIGGER = "󱐋 ",
+```
+
+### 6b — `icon_hls` table
+
+Use the same highlight group as the explorer (from the `icons` table in `components.lua`):
+
+```lua
+TRIGGER = "Keyword",
+```
+
+### 6c — `actions_by_type` table
+
+List the available actions for the type:
+
+```lua
+TRIGGER = { "Show DDL", "Drop" },
+```
+
+### 6d — `metadata_types` table
+
+Map the `user_objects.object_type` value to the `DBMS_METADATA` type name
+(underscores instead of spaces):
+
+```lua
+TRIGGER = "TRIGGER",
+```
+
+For types with spaces (e.g., `TYPE BODY`), use bracket syntax:
+
+```lua
+["TYPE BODY"] = "TYPE_BODY",
+```
+
+### 6e — `execute_action` function
+
+If the new type needs special action handling beyond the generic DDL/Drop flow,
+add an `elseif` branch in `execute_action`. The existing generic handlers cover:
+
+- `"Show DDL"` — fetches via `DBMS_METADATA.GET_DDL`
+- `"Show data"` — pre-fills `SELECT *`
+- `"Show body"` — fetches source via `DBMS_METADATA`
+- `"Show specification"` — fetches package spec
+- `"Drop"` — fetches DROP DDL
+
+---
+
+## Step 7 — `fetch_objects_by_pattern` query (`lua/ora/schema.lua`)
+
+Ensure the new object type appears in the `IN (...)` clause of
+`fetch_objects_by_pattern` so it shows up in QuickAction results:
+
+```lua
+"AND object_type IN ('TABLE','VIEW','INDEX','SYNONYM','SEQUENCE','TRIGGER','TYPE','TYPE BODY',"
+.. "'FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY') "
+```
+
+Add your new type string to this list if not already present.
+
+---
+
+## Step 8 — Update CLAUDE.md
 
 Add to the relevant sections:
 
@@ -296,7 +369,7 @@ Add to the relevant sections:
 
 ---
 
-## Step 7 — Update README.md
+## Step 9 — Update README.md
 
 Update these sections in `README.md`:
 
@@ -336,7 +409,7 @@ If useful, add an example subtree showing the new category and its children:
 
 ---
 
-## Step 8 — Testing
+## Step 10 — Testing
 
 ### Syntax check
 
@@ -348,6 +421,7 @@ luajit -bl lua/neo-tree/sources/ora/lib/items.lua /dev/null
 luajit -bl lua/neo-tree/sources/ora/components.lua /dev/null
 luajit -bl lua/neo-tree/sources/ora/init.lua /dev/null
 luajit -bl lua/neo-tree/sources/ora/commands.lua /dev/null
+luajit -bl lua/ora/ui/quick_action.lua /dev/null
 ```
 
 ### Automated tests
@@ -388,6 +462,8 @@ Then verify manually:
    choice opens the right worksheet.
 7. `r` on the category — re-fetches children (count may change).
 8. `h` / `l` — collapse/expand works correctly.
+9. `:OraQuickAction` — the new type appears in search results with correct icon/color.
+10. Select the new type → action picker shows the correct choices.
 
 ---
 
@@ -406,6 +482,8 @@ Then verify manually:
 - [ ] `commands.lua` — `expand_node` wired up
 - [ ] `commands.lua` — `quick_open` wired up
 - [ ] `commands.lua` — `show_actions` wired up
+- [ ] `quick_action.lua` — icon, icon_hl, actions_by_type, metadata_types added
+- [ ] `schema.lua` — `fetch_objects_by_pattern` IN clause includes new type
 - [ ] `CLAUDE.md` — documented
 - [ ] `README.md` — updated (quick open, actions, supported types, tree)
 - [ ] Syntax check passes on all modified files

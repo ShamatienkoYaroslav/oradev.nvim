@@ -1,6 +1,25 @@
 -- Floating picker that lists all open worksheets.
 
 local Menu = require("nui.menu")
+local NuiLine = require("nui.line")
+local NuiText = require("nui.text")
+
+-- Icon text → highlight group, matching the neo-tree explorer icons.
+local icon_highlights = {
+  ["󰆼 "]  = "Special",
+  ["󰓫 "]  = "Type",
+  ["󰡠 "]  = "Type",
+  ["󰊕 "]  = "Function",
+  ["󰡱 "]  = "Function",
+  ["󰏗 "]  = "OraIconPackage",
+  ["󰔖 "]  = "Type",
+  ["󰌹 "]  = "Number",
+  ["󰔚 "]  = "Number",
+  ["󰒍 "]  = "Type",
+  ["󱐋 "]  = "Keyword",
+  ["󰕳 "]  = "Type",
+  ["󰆴 "]  = "DiagnosticError",
+}
 
 local M = {}
 
@@ -15,8 +34,11 @@ function M.open()
 
   local items = {}
   for _, ws in ipairs(worksheets) do
+    local icon = ws.icon or "󰆼 "
+    local icon_hl = icon_highlights[icon] or "Special"
     local conn = ws.connection and ("  [" .. ws.connection.label .. "]") or "  [no connection]"
-    table.insert(items, Menu.item(ws.name .. conn, { bufnr = ws.bufnr }))
+    local line = NuiLine({ NuiText(icon, icon_hl), NuiText(ws.name .. conn) })
+    table.insert(items, Menu.item(line, { bufnr = ws.bufnr }))
   end
 
   local menu = Menu({

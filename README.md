@@ -8,7 +8,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 - [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) installed and accessible
 - [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
-- [snacks.nvim](https://github.com/folke/snacks.nvim) (optional, for spinner notifications)
+- [snacks.nvim](https://github.com/folke/snacks.nvim)
 - [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for the schema explorer)
 
 ## Installation
@@ -21,7 +21,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
   dependencies = {
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
-    "folke/snacks.nvim",           -- optional, for spinner notifications
+    "folke/snacks.nvim",
     "nvim-neo-tree/neo-tree.nvim", -- optional, for :OraExplorer
   },
   config = function()
@@ -145,6 +145,7 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Synonym   | Show DDL          | —               |
 | Sequence  | Show DDL          | —               |
 | Trigger   | Show source       | —               |
+| Type      | Show specification | Show body / Add body |
 | Function    | Show body          | —                    |
 | Procedure   | Show body          | —                    |
 | Package     | Show specification | Show body / Add body |
@@ -165,6 +166,7 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Synonym    | Show DDL, Drop synonym                                                     |
 | Sequence   | Show DDL, Drop sequence                                                    |
 | Trigger    | Show DDL, Drop trigger                                                     |
+| Type       | Show specification, Show body / Add body, Drop type, Drop type body        |
 | Function   | Show body, Drop function                                                   |
 | Procedure  | Show body, Drop procedure                                                  |
 
@@ -180,6 +182,7 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 | **Synonyms**   | Target display (owner.name@dblink), DDL                                                                |
 | **Sequences**  | Last number, increment step, DDL                                                                       |
 | **Triggers**   | Table name, trigger type, source, DDL                                                                  |
+| **Types**      | Typecode (OBJECT/COLLECTION), specification source, body source (if exists), methods with return types  |
 | **Functions**  | Parameters (with data type), return type, body source                                                  |
 | **Procedures** | Parameters (with data type), body source                                                               |
 | **Packages**   | Specification source, body source (shown only if exists), subprograms with parameters and return types |
@@ -200,6 +203,8 @@ CONNECTIONS
 │   │   ├── 󰉋 Triggers (2)
 │   │   │   ├── 󱐋 AUDIT_TRG  EMPLOYEES
 │   │   │   └── 󱐋 LOG_TRG    ORDERS
+│   │   ├── 󰉋 Types (1)
+│   │   │   └── 󰕳 ADDRESS_T  OBJECT
 │   │   ├── 󰉋 Functions (2)
 │   │   │   ├── 󰊕 GET_SALARY  NUMBER
 │   │   │   │   └── 󰆧 P_EMP_ID  NUMBER

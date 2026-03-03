@@ -124,6 +124,12 @@ local default_renderers = {
     { "name" },
     { "comment" },
   },
+  ora_type = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
   ords_module = {
     { "indent" },
     { "icon" },

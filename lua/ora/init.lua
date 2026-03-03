@@ -119,12 +119,7 @@ function M.format_worksheet()
 
   local bufnr  = vim.api.nvim_get_current_buf()
   local ws_mod = require("ora.worksheet")
-  local ws     = ws_mod.find(bufnr)
-
-  if not ws then
-    vim.notify("[ora] current buffer is not a worksheet", vim.log.levels.WARN)
-    return
-  end
+  local ws     = ws_mod.find(bufnr) or ws_mod.register(bufnr)
 
   require("ora.format").run(ws.bufnr, function(err)
     if err then
@@ -143,12 +138,7 @@ function M.change_worksheet_connection()
 
   local bufnr  = vim.api.nvim_get_current_buf()
   local ws_mod = require("ora.worksheet")
-  local ws     = ws_mod.find(bufnr)
-
-  if not ws then
-    vim.notify("[ora] current buffer is not a worksheet", vim.log.levels.WARN)
-    return
-  end
+  local ws     = ws_mod.find(bufnr) or ws_mod.register(bufnr)
 
   require("ora.ui.picker").select(function(conn)
     if not conn then return end

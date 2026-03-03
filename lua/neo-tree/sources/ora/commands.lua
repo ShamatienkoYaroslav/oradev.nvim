@@ -158,6 +158,8 @@ M.toggle_node = function(state)
     M._toggle_func_or_proc(state, node)
   elseif node.type == "package" then
     M._toggle_package(state, node)
+  elseif node.type == "ora_type" then
+    M._toggle_type(state, node)
   elseif node.type == "subprogram" then
     M._toggle_subprogram(state, node)
   elseif node.type == "ords_module" then
@@ -282,6 +284,9 @@ M._toggle_category = function(state, node)
   elseif category == "triggers" then
     fetch_fn = function(cb) schema.fetch_triggers(conn, cb) end
     build_fn = function(triggers) return items.make_trigger_children(conn_name, triggers) end
+  elseif category == "types" then
+    fetch_fn = function(cb) schema.fetch_types(conn, cb) end
+    build_fn = function(types) return items.make_type_children(conn_name, types) end
   elseif category == "sequences" then
     fetch_fn = function(cb) schema.fetch_sequences(conn, cb) end
     build_fn = function(sequences) return items.make_sequence_children(conn_name, sequences) end
@@ -882,6 +887,120 @@ M._toggle_package = function(state, node)
   end)
 end
 
+---Open the source code of a type spec or body in a new worksheet.
+M._open_type_source = function(state, node)
+  local conn_name = node.extra.conn_name
+  local type_name = node.extra.type_name
+  local part = node.extra.part
+  local object_type = part == "spec" and "TYPE" or "TYPE BODY"
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local conn = { key = conn_name, is_named = true }
+
+  local notify = require("ora.notify")
+  local nid = "ora_open"
+  notify.progress(nid, "Loading type source…")
+
+  schema.fetch_source(conn, type_name, object_type, function(lines, err)
+    node.extra.loading = false
+    renderer.redraw(state)
+
+    if err then
+      notify.error(nid, "Failed to load type source")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    local ws_mod = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local part_label = part == "spec" and "Type Specification" or "Type Body"
+    local display = schema_name(state, conn_name) .. "." .. type_name .. " (" .. part_label .. ")"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = type_name .. "-" .. part,
+      display_name = display,
+      icon         = "󰕳 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      if line ~= "" then
+        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+          table.insert(buf_lines, seg)
+        end
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Type source loaded")
+  end)
+end
+
+---Expand/collapse a type node, lazy-loading methods.
+M._toggle_type = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local items = require("neo-tree.sources.ora.lib.items")
+  local conn_name = node.extra.conn_name
+  local type_name = node.extra.type_name
+  local conn = { key = conn_name, is_named = true }
+
+  local results = {}
+  local pending = 2
+
+  local function on_done()
+    pending = pending - 1
+    if pending > 0 then return end
+
+    node.extra.loading = false
+    node.extra.has_body = results.has_body
+    local children = {}
+    for _, sub in ipairs(results.subprograms or {}) do
+      table.insert(children, {
+        id       = "sub:" .. conn_name .. ":" .. type_name .. ":" .. sub.name,
+        name     = sub.name,
+        type     = "subprogram",
+        path     = conn_name .. "/Types/" .. type_name .. "/" .. sub.name,
+        children = {},
+        extra    = { conn_name = conn_name, pkg_name = type_name, subprogram = sub.name, return_type = sub.return_type, loaded = false },
+      })
+    end
+    M._set_category_children(state, node, conn_name, children)
+  end
+
+  schema.fetch_type_has_body(conn, type_name, function(has_body, err)
+    results.has_body = has_body and not err
+    on_done()
+  end)
+
+  schema.fetch_package_subprograms_with_types(conn, type_name, function(subs, err)
+    if not err then
+      results.subprograms = subs or {}
+    end
+    on_done()
+  end)
+end
+
 ---Expand/collapse a standalone function or procedure node, lazy-loading parameters.
 M._toggle_func_or_proc = function(state, node)
   if node:is_expanded() then
@@ -948,8 +1067,8 @@ M._open_object_source = function(state, node)
 
     local ws_mod = require("ora.worksheet")
     local ws_conn = { key = conn_name, label = conn_name, is_named = true }
-    local icon_map  = { FUNCTION = "󰊕 ", PROCEDURE = "󰡱 ", TRIGGER = "󱐋 " }
-    local label_map = { FUNCTION = "Function Body", PROCEDURE = "Procedure Body", TRIGGER = "Trigger Source" }
+    local icon_map  = { FUNCTION = "󰊕 ", PROCEDURE = "󰡱 ", TRIGGER = "󱐋 ", TYPE = "󰕳 " }
+    local label_map = { FUNCTION = "Function Body", PROCEDURE = "Procedure Body", TRIGGER = "Trigger Source", TYPE = "Type Source" }
     local icon = icon_map[object_type] or "󰡱 "
     local type_label = label_map[object_type] or (object_type:sub(1,1) .. object_type:sub(2):lower() .. " Body")
     local display = schema_name(state, conn_name) .. "." .. object_name .. " (" .. type_label .. ")"
@@ -1759,6 +1878,10 @@ M.expand_node = function(state)
     if not node:is_expanded() then
       M._toggle_package(state, node)
     end
+  elseif node.type == "ora_type" then
+    if not node:is_expanded() then
+      M._toggle_type(state, node)
+    end
   elseif node.type == "subprogram" then
     if not node:is_expanded() then
       M._toggle_subprogram(state, node)
@@ -1828,6 +1951,11 @@ M.refresh = function(state)
     node.extra.loaded = false
     M._clear_cached_node(state, node)
     M._toggle_package(state, node)
+  elseif node.type == "ora_type" and node.extra and node.extra.loaded then
+    node:collapse()
+    node.extra.loaded = false
+    M._clear_cached_node(state, node)
+    M._toggle_type(state, node)
   elseif node.type == "subprogram" and node.extra and node.extra.loaded then
     node:collapse()
     node.extra.loaded = false
@@ -1921,6 +2049,11 @@ M.quick_open = function(state)
       extra = { conn_name = node.extra.conn_name, object_name = node.extra.trigger_name, object_type = "TRIGGER", loading = false },
     }
     M._open_object_source(state, fake)
+  elseif node.type == "ora_type" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, type_name = node.extra.type_name, part = "spec", loading = false },
+    }
+    M._open_type_source(state, fake)
   elseif node.type == "sequence" then
     M._open_sequence_ddl(state, node)
   elseif node.type == "ords_module" then
@@ -1968,6 +2101,27 @@ M.quick_open_alt = function(state)
         name         = pkg_name .. "-body",
         display_name = display,
         icon         = "󰏗 ",
+      })
+      vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+      open_ws_in_main(ws)
+    end
+  elseif node.type == "ora_type" then
+    local conn_name = node.extra.conn_name
+    local type_name = node.extra.type_name
+    if node.extra.has_body then
+      local fake = {
+        extra = { conn_name = conn_name, type_name = type_name, part = "body", loading = false },
+      }
+      M._open_type_source(state, fake)
+    else
+      local ws_mod = require("ora.worksheet")
+      local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+      local display = schema_name(state, conn_name) .. "." .. type_name .. " (Type Body)"
+      local ws = ws_mod.create({
+        connection   = ws_conn,
+        name         = type_name .. "-body",
+        display_name = display,
+        icon         = "󰕳 ",
       })
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_ws_in_main(ws)
@@ -2163,6 +2317,45 @@ M.show_actions = function(state)
         M._open_object_source(state, fake)
       else
         open_drop_worksheet(state, conn_name, object_name, object_type)
+      end
+    end)
+  elseif node.type == "ora_type" then
+    local conn_name = node.extra.conn_name
+    local type_name = node.extra.type_name
+    local has_body  = node.extra.has_body
+    local actions = { "Show specification" }
+    if has_body then
+      table.insert(actions, "Show body")
+    else
+      table.insert(actions, "Add body")
+    end
+    table.insert(actions, "Drop type")
+    if has_body then
+      table.insert(actions, "Drop type body")
+    end
+    action_picker(type_name, actions, function(choice)
+      if choice == "Show specification" or choice == "Show body" then
+        local part = choice == "Show specification" and "spec" or "body"
+        local fake = {
+          extra = { conn_name = conn_name, type_name = type_name, part = part, loading = false },
+        }
+        M._open_type_source(state, fake)
+      elseif choice == "Add body" then
+        local ws_mod = require("ora.worksheet")
+        local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+        local display = schema_name(state, conn_name) .. "." .. type_name .. " (Type Body)"
+        local ws = ws_mod.create({
+          connection   = ws_conn,
+          name         = type_name .. "-body",
+          display_name = display,
+          icon         = "󰕳 ",
+        })
+        vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+        open_ws_in_main(ws)
+      elseif choice == "Drop type" then
+        open_drop_worksheet(state, conn_name, type_name, "TYPE")
+      elseif choice == "Drop type body" then
+        open_drop_worksheet(state, conn_name, type_name, "TYPE BODY")
       end
     end)
   elseif node.type == "trigger" then

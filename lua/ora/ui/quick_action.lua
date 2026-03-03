@@ -1,7 +1,7 @@
 -- Quick Action: find schema objects by pattern and act on them.
+-- Uses Snacks.picker for fuzzy object search, nui.menu for action selection.
 
 local Menu = require("nui.menu")
-local Input = require("nui.input")
 
 local M = {}
 
@@ -10,10 +10,29 @@ local icons = {
   VIEW             = "󰡠 ",
   INDEX            = "󰌹 ",
   SYNONYM          = "󰔖 ",
+  SEQUENCE         = "󰔚 ",
+  TRIGGER          = "󱐋 ",
+  TYPE             = "󰕳 ",
+  ["TYPE BODY"]    = "󰕳 ",
   ["FUNCTION"]     = "󰊕 ",
   PROCEDURE        = "󰡱 ",
   PACKAGE          = "󰏗 ",
   ["PACKAGE BODY"] = "󰏗 ",
+}
+
+local icon_hls = {
+  TABLE            = "Type",
+  VIEW             = "Type",
+  INDEX            = "Number",
+  SYNONYM          = "Type",
+  SEQUENCE         = "Number",
+  TRIGGER          = "Keyword",
+  TYPE             = "Type",
+  ["TYPE BODY"]    = "Type",
+  ["FUNCTION"]     = "Function",
+  PROCEDURE        = "Function",
+  PACKAGE          = "OraIconPackage",
+  ["PACKAGE BODY"] = "OraIconPackage",
 }
 
 local actions_by_type = {
@@ -21,6 +40,10 @@ local actions_by_type = {
   VIEW             = { "Show DDL", "Show data", "Drop" },
   INDEX            = { "Show DDL", "Drop" },
   SYNONYM          = { "Show DDL", "Drop" },
+  SEQUENCE         = { "Show DDL", "Drop" },
+  TRIGGER          = { "Show DDL", "Drop" },
+  TYPE             = { "Show DDL", "Drop" },
+  ["TYPE BODY"]    = { "Show DDL", "Drop" },
   ["FUNCTION"]     = { "Show body", "Drop" },
   PROCEDURE        = { "Show body", "Drop" },
   PACKAGE          = { "Show specification", "Show body", "Drop" },
@@ -33,6 +56,10 @@ local metadata_types = {
   VIEW             = "VIEW",
   INDEX            = "INDEX",
   SYNONYM          = "SYNONYM",
+  SEQUENCE         = "SEQUENCE",
+  TRIGGER          = "TRIGGER",
+  TYPE             = "TYPE",
+  ["TYPE BODY"]    = "TYPE_BODY",
   ["FUNCTION"]     = "FUNCTION",
   PROCEDURE        = "PROCEDURE",
   PACKAGE          = "PACKAGE",
@@ -110,7 +137,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = otype .. " DDL",
         icon           = icon,
         lines          = clean_lines(lines),
-              })
+      })
       notify.done(nid, "DDL loaded")
     end)
 
@@ -146,7 +173,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = suffix,
         icon           = icon,
         lines          = clean_lines(lines),
-              })
+      })
       notify.done(nid, "Source loaded")
     end)
 
@@ -166,7 +193,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = "Package Specification",
         icon           = icon,
         lines          = clean_lines(lines),
-              })
+      })
       notify.done(nid, "Source loaded")
     end)
 
@@ -239,98 +266,59 @@ local function show_actions_menu(conn_name, schema, object)
   menu:mount()
 end
 
----Show the object picker from search results.
+---Show the Snacks.picker for schema objects with fuzzy search.
 ---@param conn_name string
 ---@param schema string
 ---@param objects {name: string, object_type: string}[]
-local function show_objects_menu(conn_name, schema, objects)
-  local items = {}
+local function show_picker(conn_name, schema, objects)
+  local picker_items = {}
   for _, obj in ipairs(objects) do
     local icon = icons[obj.object_type] or "  "
-    local label = icon .. obj.name
-    table.insert(items, Menu.item(label, { object = obj }))
+    table.insert(picker_items, {
+      text = obj.name .. " " .. obj.object_type,
+      object = obj,
+      icon = icon,
+      icon_hl = icon_hls[obj.object_type] or "Normal",
+    })
   end
 
-  local cfg = require("ora.config").values
-  local menu = Menu({
-    relative = "editor",
-    position = "50%",
-    size     = { width = cfg.win_width, height = math.min(cfg.win_height, #items) },
-    border   = {
-      style = "rounded",
-      text  = { top = " Matching Objects ", top_align = "left" },
-    },
-    enter = true,
-  }, {
-    lines  = items,
-    keymap = {
-      focus_next = { "j", "<Down>" },
-      focus_prev = { "k", "<Up>" },
-      close      = {},
-      submit     = { "<CR>" },
-    },
-    on_close  = function() end,
-    on_submit = function(item)
-      show_actions_menu(conn_name, schema, item.object)
+  Snacks.picker({
+    title = "Quick Action",
+    items = picker_items,
+    format = function(item)
+      return {
+        { item.icon, item.icon_hl },
+        { item.object.name },
+        { "  (" .. item.object.object_type .. ")", "Comment" },
+      }
     end,
+    layout = {
+      hidden = { "preview" },
+      layout = {
+        backdrop = false,
+        width = 0.4,
+        min_width = 60,
+        height = 0.5,
+        border = "rounded",
+        box = "vertical",
+        { win = "input", height = 1, border = "bottom" },
+        { win = "list", border = "none" },
+      },
+    },
+    actions = {
+      confirm = function(picker, item)
+        picker:close()
+        if item and item.object then
+          vim.schedule(function()
+            show_actions_menu(conn_name, schema, item.object)
+          end)
+        end
+      end,
+    },
   })
-
-  local function do_close() menu:unmount() end
-  menu:map("n", "q",     do_close, { noremap = true })
-  menu:map("n", "<Esc>", do_close, { noremap = true })
-  menu:mount()
 end
 
----Show the pattern input prompt.
----@param conn_name string
----@param schema string
-local function ask_pattern(conn_name, schema)
-  local cfg = require("ora.config").values
-  local input = Input({
-    relative = "editor",
-    position = "50%",
-    size     = { width = cfg.win_width },
-    border   = {
-      style = "rounded",
-      text  = { top = " Object name pattern ", top_align = "left" },
-    },
-    enter = true,
-  }, {
-    prompt = " ",
-    on_submit = function(value)
-      local pattern = vim.trim(value or "")
-      if pattern == "" then return end
-
-      local conn = { key = conn_name, is_named = true }
-      local notify = require("ora.notify")
-      local nid = "ora_quick"
-      notify.progress(nid, "Searching objects…")
-
-      require("ora.schema").fetch_objects_by_pattern(conn, pattern, function(objects, err)
-        if err then
-          notify.error(nid, "Search failed")
-          vim.notify("[ora] " .. err, vim.log.levels.ERROR)
-          return
-        end
-
-        if not objects or #objects == 0 then
-          notify.done(nid, "No objects found")
-          vim.notify("[ora] No objects matching '" .. pattern .. "'", vim.log.levels.WARN)
-          return
-        end
-
-        notify.done(nid, #objects .. " object(s) found")
-        show_objects_menu(conn_name, schema, objects)
-      end)
-    end,
-  })
-
-  input:map("n", "q",     function() input:unmount() end, { noremap = true })
-  input:map("n", "<Esc>", function() input:unmount() end, { noremap = true })
-  input:mount()
-end
-
----Open the quick action flow: pick connection → enter pattern → pick object → pick action.
+---Open the quick action flow: pick connection → fetch all objects → live filter.
 function M.open()
   require("ora.ui.picker").select(function(conn)
     if not conn then return end
@@ -339,7 +327,26 @@ function M.open()
     local info = require("ora.connmgr").show(conn.key)
     local schema = (info and info.user) or conn.key
 
-    ask_pattern(conn.key, schema)
+    local notify = require("ora.notify")
+    local nid = "ora_quick"
+    notify.progress(nid, "Loading schema objects…")
+
+    require("ora.schema").fetch_objects_by_pattern(conn, "%%", function(objects, err)
+      if err then
+        notify.error(nid, "Failed to load objects")
+        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        return
+      end
+
+      if not objects or #objects == 0 then
+        notify.done(nid, "No objects found")
+        vim.notify("[ora] No schema objects found", vim.log.levels.WARN)
+        return
+      end
+
+      notify.done(nid, #objects .. " object(s) loaded")
+      show_picker(conn.key, schema, objects)
+    end)
   end)
 end
 
