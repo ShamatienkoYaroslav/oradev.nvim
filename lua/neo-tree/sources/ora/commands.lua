@@ -154,6 +154,8 @@ M.toggle_node = function(state)
     M._toggle_table(state, node)
   elseif node.type == "view" then
     M._toggle_view(state, node)
+  elseif node.type == "mview" then
+    M._toggle_mview(state, node)
   elseif node.type == "function" or node.type == "procedure" then
     M._toggle_func_or_proc(state, node)
   elseif node.type == "package" then
@@ -266,6 +268,12 @@ M._toggle_category = function(state, node)
   elseif category == "views" then
     fetch_fn = function(cb) schema.fetch_views_with_comments(conn, cb) end
     build_fn = function(views) return items.make_view_children(conn_name, views) end
+  elseif category == "mviews" then
+    fetch_fn = function(cb) schema.fetch_mviews(conn, cb) end
+    build_fn = function(mviews) return items.make_mview_children(conn_name, mviews) end
+  elseif category == "mview_logs" then
+    fetch_fn = function(cb) schema.fetch_mview_logs(conn, cb) end
+    build_fn = function(logs) return items.make_mview_log_children(conn_name, logs) end
   elseif category == "functions" then
     fetch_fn = function(cb) schema.fetch_functions_with_return_type(conn, cb) end
     build_fn = function(funcs) return items.make_function_children(conn_name, funcs) end
@@ -462,6 +470,168 @@ M._toggle_view = function(state, node)
       results.col_comments = comments or {}
     end
     on_done()
+  end)
+end
+
+---Expand/collapse a materialized view node, lazy-loading columns.
+M._toggle_mview = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  node.extra.loading = true
+  renderer.redraw(state)
+
+  local schema = require("ora.schema")
+  local items = require("neo-tree.sources.ora.lib.items")
+  local conn_name  = node.extra.conn_name
+  local mview_name = node.extra.mview_name
+  local conn = { key = conn_name, is_named = true }
+
+  local results = {}
+  local pending = 2
+
+  local function on_done()
+    pending = pending - 1
+    if pending > 0 then return end
+
+    node.extra.loading = false
+
+    -- Merge column comments into column nodes
+    if results.col_comments and #results.col_comments > 0 then
+      local cmt_map = {}
+      for _, c in ipairs(results.col_comments) do
+        cmt_map[c.column] = c.text
+      end
+      for _, col_node in ipairs(results.columns or {}) do
+        local cmt = cmt_map[col_node.name]
+        if cmt then
+          col_node.extra.comment = cmt
+        end
+      end
+    end
+
+    local children = {}
+    for _, c in ipairs(results.columns or {}) do table.insert(children, c) end
+
+    M._set_category_children(state, node, conn_name, children)
+  end
+
+  schema.fetch_columns_with_types(conn, mview_name, function(cols, err)
+    if not err then
+      results.columns = items.make_column_children(conn_name, mview_name, cols or {})
+    end
+    on_done()
+  end)
+
+  schema.fetch_comments(conn, mview_name, function(comments, err)
+    if not err then
+      results.col_comments = comments or {}
+    end
+    on_done()
+  end)
+end
+
+---Open the DDL or data of a materialized view in a new worksheet.
+M._open_mview_action = function(state, node)
+  local conn_name  = node.extra.conn_name
+  local mview_name = node.extra.mview_name
+  local action     = node.extra.action
+
+  local ws_mod  = require("ora.worksheet")
+  local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+
+  if action == "data" then
+    local display = schema_name(state, conn_name) .. "." .. mview_name .. " (Materialized View Data)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = mview_name .. "-data",
+      display_name = display,
+      icon         = "󰡠 ",
+    })
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. mview_name .. ";" })
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+  else
+    -- DDL
+    local notify = require("ora.notify")
+    local nid = "ora_open"
+    notify.progress(nid, "Loading materialized view DDL…")
+    local conn = { key = conn_name, is_named = true }
+    require("ora.schema").fetch_object_ddl(conn, "MATERIALIZED_VIEW", mview_name, function(lines, err)
+      if err then
+        notify.error(nid, "Failed to load DDL")
+        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        return
+      end
+      local display = schema_name(state, conn_name) .. "." .. mview_name .. " (Materialized View DDL)"
+      local ws = ws_mod.create({
+        connection   = ws_conn,
+        name         = mview_name .. "-ddl",
+        display_name = display,
+        icon         = "󰡠 ",
+      })
+      local buf_lines = {}
+      for _, line in ipairs(lines or {}) do
+        line = line:gsub("%s+$", "")
+        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+          table.insert(buf_lines, seg)
+        end
+      end
+      vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+      vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+      open_ws_in_main(ws)
+      format_buffer(ws.bufnr)
+      notify.done(nid, "Materialized view DDL loaded")
+    end)
+  end
+end
+
+---Open the DDL of a materialized view log in a new worksheet.
+M._open_mview_log_ddl = function(state, node)
+  local conn_name = node.extra.conn_name
+  local log_table = node.extra.log_table
+  local master    = node.extra.master
+  local conn      = { key = conn_name, is_named = true }
+  local notify    = require("ora.notify")
+  local nid       = "ora_open"
+  notify.progress(nid, "Loading materialized view log DDL…")
+
+  require("ora.schema").fetch_object_ddl(conn, "MATERIALIZED_VIEW_LOG", master, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load DDL")
+      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      return
+    end
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. log_table .. " (Materialized View Log DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = log_table .. "-ddl",
+      display_name = display,
+      icon         = "󰩼 ",
+    })
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Materialized view log DDL loaded")
   end)
 end
 
@@ -1870,6 +2040,10 @@ M.expand_node = function(state)
     if not node:is_expanded() then
       M._toggle_view(state, node)
     end
+  elseif node.type == "mview" then
+    if not node:is_expanded() then
+      M._toggle_mview(state, node)
+    end
   elseif node.type == "function" or node.type == "procedure" then
     if not node:is_expanded() then
       M._toggle_func_or_proc(state, node)
@@ -1946,6 +2120,11 @@ M.refresh = function(state)
     node.extra.loaded = false
     M._clear_cached_node(state, node)
     M._toggle_view(state, node)
+  elseif node.type == "mview" and node.extra and node.extra.loaded then
+    node:collapse()
+    node.extra.loaded = false
+    M._clear_cached_node(state, node)
+    M._toggle_mview(state, node)
   elseif node.type == "package" and node.extra and node.extra.loaded then
     node:collapse()
     node.extra.loaded = false
@@ -2029,6 +2208,11 @@ M.quick_open = function(state)
       extra = { conn_name = node.extra.conn_name, view_name = node.extra.view_name, action = "ddl", loading = false },
     }
     M._open_view_action(state, fake)
+  elseif node.type == "mview" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, mview_name = node.extra.mview_name, action = "ddl", loading = false },
+    }
+    M._open_mview_action(state, fake)
   elseif node.type == "function" or node.type == "procedure" then
     local object_type = node.type == "function" and "FUNCTION" or "PROCEDURE"
     local fake = {
@@ -2040,6 +2224,8 @@ M.quick_open = function(state)
       extra = { conn_name = node.extra.conn_name, pkg_name = node.extra.pkg_name, part = "spec", loading = false },
     }
     M._open_package_source(state, fake)
+  elseif node.type == "mview_log" then
+    M._open_mview_log_ddl(state, node)
   elseif node.type == "synonym" then
     M._open_synonym_ddl(state, node)
   elseif node.type == "schema_index" then
@@ -2084,6 +2270,11 @@ M.quick_open_alt = function(state)
       extra = { conn_name = node.extra.conn_name, view_name = node.extra.view_name, action = "data", loading = false },
     }
     M._open_view_action(state, fake)
+  elseif node.type == "mview" then
+    local fake = {
+      extra = { conn_name = node.extra.conn_name, mview_name = node.extra.mview_name, action = "data", loading = false },
+    }
+    M._open_mview_action(state, fake)
   elseif node.type == "package" then
     local conn_name = node.extra.conn_name
     local pkg_name  = node.extra.pkg_name
@@ -2272,6 +2463,31 @@ M.show_actions = function(state)
         M._open_view_action(state, fake)
       elseif choice == "Drop view" then
         open_drop_worksheet(state, conn_name, view_name, "VIEW")
+      end
+    end)
+  elseif node.type == "mview" then
+    local conn_name  = node.extra.conn_name
+    local mview_name = node.extra.mview_name
+    action_picker(mview_name, { "Show DDL", "Show data", "Drop materialized view" }, function(choice)
+      if choice == "Show DDL" or choice == "Show data" then
+        local action = choice == "Show DDL" and "ddl" or "data"
+        local fake = {
+          extra = { conn_name = conn_name, mview_name = mview_name, action = action, loading = false },
+        }
+        M._open_mview_action(state, fake)
+      elseif choice == "Drop materialized view" then
+        open_drop_worksheet(state, conn_name, mview_name, "MATERIALIZED VIEW")
+      end
+    end)
+  elseif node.type == "mview_log" then
+    local conn_name = node.extra.conn_name
+    local log_table = node.extra.log_table
+    local master    = node.extra.master
+    action_picker(log_table, { "Show DDL", "Drop materialized view log" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_mview_log_ddl(state, node)
+      elseif choice == "Drop materialized view log" then
+        open_drop_worksheet(state, conn_name, master, "MATERIALIZED_VIEW_LOG")
       end
     end)
   elseif node.type == "synonym" then

@@ -108,6 +108,22 @@ function M.make_category_stubs(conn_name)
       extra    = { category = "views", conn_name = conn_name, loaded = false },
     },
     {
+      id       = "cat:" .. conn_name .. ":Materialized Views",
+      name     = "Materialized Views",
+      type     = "category",
+      path     = conn_name .. "/Materialized Views",
+      children = {},
+      extra    = { category = "mviews", conn_name = conn_name, loaded = false },
+    },
+    {
+      id       = "cat:" .. conn_name .. ":Materialized View Logs",
+      name     = "Materialized View Logs",
+      type     = "category",
+      path     = conn_name .. "/Materialized View Logs",
+      children = {},
+      extra    = { category = "mview_logs", conn_name = conn_name, loaded = false },
+    },
+    {
       id       = "cat:" .. conn_name .. ":Indexes",
       name     = "Indexes",
       type     = "category",
@@ -220,6 +236,48 @@ function M.make_view_children(conn_name, views)
       path     = conn_name .. "/Views/" .. v.name,
       children = {},
       extra    = { conn_name = conn_name, view_name = v.name, comment = v.comment, loaded = false },
+    })
+  end
+  return children
+end
+
+---Build child nodes for a list of materialized views with comments.
+---@param conn_name string
+---@param mviews    {name: string, comment: string}[]
+---@return table[]
+function M.make_mview_children(conn_name, mviews)
+  local children = {}
+  for _, mv in ipairs(mviews) do
+    table.insert(children, {
+      id       = "mview:" .. conn_name .. ":" .. mv.name,
+      name     = mv.name,
+      type     = "mview",
+      path     = conn_name .. "/Materialized Views/" .. mv.name,
+      children = {},
+      extra    = { conn_name = conn_name, mview_name = mv.name, comment = mv.comment, loaded = false },
+    })
+  end
+  return children
+end
+
+---Build child nodes for materialized view logs.
+---@param conn_name string
+---@param logs      {name: string, master: string}[]
+---@return table[]
+function M.make_mview_log_children(conn_name, logs)
+  local children = {}
+  for _, log in ipairs(logs) do
+    table.insert(children, {
+      id       = "mvlog:" .. conn_name .. ":" .. log.name,
+      name     = log.name,
+      type     = "mview_log",
+      path     = conn_name .. "/Materialized View Logs/" .. log.name,
+      children = {},
+      extra    = {
+        conn_name = conn_name,
+        log_table = log.name,
+        master    = log.master,
+      },
     })
   end
   return children

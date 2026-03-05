@@ -79,6 +79,8 @@ Uses `plenary.Job:start()` for async queries. Functions include:
 - `fetch_synonym_ddl` — `DBMS_METADATA.GET_DDL` for synonyms
 - `fetch_sequences` — `user_sequences` (multi-column: name, min_value, max_value, increment_by, last_number)
 - `fetch_triggers` — `user_triggers` (multi-column: name, table_name, trigger_type)
+- `fetch_mviews` — `user_mviews` + `user_tab_comments` (multi-column: name, comment)
+- `fetch_mview_logs` — `user_mview_logs` (multi-column: name, master)
 - `fetch_type_has_body` — checks for `TYPE BODY` in `user_objects`
 - `fetch_types` — `user_types` (multi-column: name, typecode)
 - `fetch_source` — `user_source` (package spec/body, function/procedure body)
@@ -103,7 +105,7 @@ source plugin pattern:
 
 `lua/neo-tree/sources/ora/init.lua` — source entry point with `navigate()` and
 `setup()`. Defines `default_renderers` for all custom node types (connection,
-category, table, column, index, constraint, schema_index, synonym, trigger, ora_type, function, procedure, package,
+category, table, column, index, constraint, schema_index, synonym, trigger, mview, mview_log, ora_type, function, procedure, package,
 package_part, subprogram, parameter, table_action, source_action, message).
 Renderers are injected into `state.renderers` during navigate.
 
@@ -142,6 +144,9 @@ Internal handlers:
 - `_open_object_source` — fetches function/procedure source, creates worksheet
 - `_open_table_action` — DDL: fetches via DBMS_METADATA; Data: pre-fills SELECT *
 - `_open_view_action` — DDL: fetches view DDL; Data: pre-fills SELECT *
+- `_toggle_mview` — fetches columns + comments in parallel, expands mview node
+- `_open_mview_action` — DDL: fetches via DBMS_METADATA; Data: pre-fills SELECT *
+- `_open_mview_log_ddl` — fetches materialized view log DDL via DBMS_METADATA, creates worksheet
 - `_set_category_children` — caches children, preserves expansion state across rebuilds
 - `_collect_expanded` / `_restore_expanded` — save/restore NuiTree node expansion
 
@@ -158,7 +163,7 @@ in `state.ora_children`. Builder functions: `make_table_children`,
 `make_column_children`, `make_index_children`, `make_constraint_children`,
 `make_function_children`, `make_procedure_children`, `make_package_children`,
 `make_subprogram_children`, `make_parameter_children`, `make_object_parameter_children`,
-`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_type_children`, `make_ords_module_children`, `make_ords_template_children`,
+`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_type_children`, `make_mview_children`, `make_mview_log_children`, `make_ords_module_children`, `make_ords_template_children`,
 `make_ords_handler_children`, `make_ords_parameter_children`.
 
 ### Neo-tree state
@@ -181,6 +186,8 @@ The explorer stores state on the neo-tree state object:
 - `synonym` — `{conn_name, synonym_name, target_owner, target_name, db_link, target}`
 - `sequence` — `{conn_name, sequence_name, min_value, max_value, increment_by, last_number, detail}`
 - `trigger` — `{conn_name, trigger_name, table_name, trigger_type}`
+- `mview` — `{conn_name, mview_name, comment?, loaded}`
+- `mview_log` — `{conn_name, log_table, master}`
 - `ora_type` — `{conn_name, type_name, typecode, has_body, loaded}`
 - `function` — `{conn_name, object_name, return_type, loaded}`
 - `procedure` — `{conn_name, object_name, loaded}`

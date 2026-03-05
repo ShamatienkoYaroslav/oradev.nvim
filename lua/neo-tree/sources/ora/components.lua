@@ -16,6 +16,8 @@ local icons = {
   schema_index     = { text = "󰌹 ", hl = "Number" },
   synonym          = { text = "󰔖 ", hl = "Type" },
   view             = { text = "󰡠 ", hl = "Type" },
+  mview            = { text = "󰡠 ", hl = "Constant" },
+  mview_log        = { text = "󰩼 ", hl = "Constant" },
   column           = { text = "󰠵 ", hl = "Identifier" },
   index            = { text = "󰌹 ", hl = "Number" },
   constraint       = { text = "󰌆 ", hl = "Keyword" },
@@ -98,6 +100,10 @@ M.name = function(config, node, state)
     highlight = highlights.FILE_NAME
   elseif node.type == "synonym" then
     highlight = highlights.FILE_NAME
+  elseif node.type == "mview" then
+    highlight = highlights.FILE_NAME
+  elseif node.type == "mview_log" then
+    highlight = highlights.FILE_NAME
   elseif node.type == "schema_index" then
     highlight = highlights.FILE_NAME
   elseif node.type == "package" then
@@ -142,6 +148,8 @@ M.comment = function(config, node, state)
     cmt = node.extra and node.extra.table_name
   elseif node.type == "ora_type" then
     cmt = node.extra and node.extra.typecode
+  elseif node.type == "mview_log" then
+    cmt = node.extra and node.extra.master
   end
   if not cmt or cmt == "" then return { text = "" } end
   return { text = " " .. cmt, highlight = highlights.DIM_TEXT }

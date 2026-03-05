@@ -1498,7 +1498,7 @@ function M.fetch_objects_by_pattern(conn, pattern, callback)
   local sql = string.format(
     "SELECT object_name, object_type FROM user_objects " ..
     "WHERE object_name LIKE '%s' " ..
-    "AND object_type IN ('TABLE','VIEW','INDEX','SYNONYM','SEQUENCE','TRIGGER','TYPE','TYPE BODY','FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY') " ..
+    "AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW','INDEX','SYNONYM','SEQUENCE','TRIGGER','TYPE','TYPE BODY','FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY') " ..
     "ORDER BY object_type, object_name",
     pattern
   )
@@ -1560,6 +1560,55 @@ function M.fetch_triggers(conn, callback)
         end
       end
       callback(triggers, nil)
+    end)
+end
+
+---Fetch materialized views from user_mviews with comments.
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(mviews: {name: string, comment: string}[]|nil, err: string|nil)
+function M.fetch_mviews(conn, callback)
+  run_multi_query(conn,
+    "SELECT m.mview_name, c.comments " ..
+    "FROM user_mviews m " ..
+    "LEFT JOIN user_tab_comments c ON c.table_name = m.mview_name " ..
+    "ORDER BY m.mview_name",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local mviews = {}
+      for _, item in ipairs(items or {}) do
+        local name = item.MVIEW_NAME or item.mview_name
+        local cmt  = item.COMMENTS   or item.comments
+        if name and name ~= vim.NIL then
+          table.insert(mviews, {
+            name    = tostring(name),
+            comment = (cmt and cmt ~= vim.NIL) and tostring(cmt) or "",
+          })
+        end
+      end
+      callback(mviews, nil)
+    end)
+end
+
+---Fetch materialized view logs from user_mview_logs.
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(logs: {name: string, master: string}[]|nil, err: string|nil)
+function M.fetch_mview_logs(conn, callback)
+  run_multi_query(conn,
+    "SELECT log_table, master FROM user_mview_logs ORDER BY log_table",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local logs = {}
+      for _, item in ipairs(items or {}) do
+        local name   = item.LOG_TABLE or item.log_table
+        local master = item.MASTER    or item.master
+        if name and name ~= vim.NIL then
+          table.insert(logs, {
+            name   = tostring(name),
+            master = (master and master ~= vim.NIL) and tostring(master) or "",
+          })
+        end
+      end
+      callback(logs, nil)
     end)
 end
 

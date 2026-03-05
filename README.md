@@ -141,6 +141,8 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | --------- | ----------------- | --------------- |
 | Table     | Show DDL          | Show data       |
 | View      | Show DDL          | Show data       |
+| Materialized View | Show DDL | Show data       |
+| Materialized View Log | Show DDL | —           |
 | Index     | Show DDL          | —               |
 | Synonym   | Show DDL          | —               |
 | Sequence  | Show DDL          | —               |
@@ -162,6 +164,8 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Package    | Show specification, Show body / Add body, Drop package, Drop package body  |
 | Table      | Show DDL, Show data, Drop table                                            |
 | View       | Show DDL, Show data, Drop view                                             |
+| Materialized View | Show DDL, Show data, Drop materialized view                          |
+| Materialized View Log | Show DDL, Drop materialized view log                              |
 | Index      | Show DDL, Drop index                                                       |
 | Synonym    | Show DDL, Drop synonym                                                     |
 | Sequence   | Show DDL, Drop sequence                                                    |
@@ -178,6 +182,8 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | **Tables**     | Columns (with data type), indexes, constraints, table comment, column comments                         |
 | **Views**      | Columns (with data type), column comments, DDL, data                                                   |
+| **Materialized Views** | Columns (with data type), column comments, DDL, data                                           |
+| **Materialized View Logs** | Master table name, DDL                                                                    |
 | **Indexes**    | Table name, uniqueness, DDL                                                                            |
 | **Synonyms**   | Target display (owner.name@dblink), DDL                                                                |
 | **Sequences**  | Last number, increment step, DDL                                                                       |
@@ -200,6 +206,10 @@ CONNECTIONS
 │   │   │   │   ├── 󰌹 EMP_NAME_IDX
 │   │   │   │   └── 󰌆 EMP_PK
 │   │   │   └── ...
+│   │   ├── 󰉋 Materialized Views (1)
+│   │   │   └── 󰡠 EMP_SUMMARY
+│   │   ├── 󰉋 Materialized View Logs (1)
+│   │   │   └── 󰩼 MLOG$_EMPLOYEES  EMPLOYEES
 │   │   ├── 󰉋 Triggers (2)
 │   │   │   ├── 󱐋 AUDIT_TRG  EMPLOYEES
 │   │   │   └── 󱐋 LOG_TRG    ORDERS

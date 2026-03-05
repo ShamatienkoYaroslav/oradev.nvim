@@ -13,10 +13,11 @@
 [+] Add triggers
 [+] Add types
 [+] Add sequences
-[] Add Mviews
+[+] Add Mviews
 [] Add Mview Logs
 [+] Add indexes
 [+] Use dbms_metadata to fetch the plsql code and skip formatting
 [] Add formatting command for worksheets
 [] Global search in packages, functions, procedures, triggers and types
 [] Add icons to the worksheet list
+[] Add support for DBMS scheduler objects

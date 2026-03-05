@@ -45,6 +45,18 @@ local default_renderers = {
     { "name" },
     { "comment" },
   },
+  mview = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
+  mview_log = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "comment" },
+  },
   synonym = {
     { "indent" },
     { "icon" },
