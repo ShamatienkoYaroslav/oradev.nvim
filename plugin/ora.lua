@@ -58,7 +58,8 @@ vim.api.nvim_create_user_command("OraExplorer", function()
   local ok2, err = pcall(require("neo-tree.command").execute, { source = "ora", position = "left" })
   if not ok2 then
     vim.notify(
-      '[ora] Failed to open explorer. Add "ora" to your neo-tree sources config:\n'
+      '[ora] Failed to open explorer: ' .. tostring(err) .. '\n'
+        .. 'Make sure "ora" is in your neo-tree sources config:\n'
         .. '  require("neo-tree").setup({ sources = { "filesystem", "ora" }, ora = { ... } })',
       vim.log.levels.ERROR
     )

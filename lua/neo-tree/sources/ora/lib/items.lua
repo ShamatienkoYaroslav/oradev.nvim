@@ -68,7 +68,21 @@ end
 ---@param state table  neo-tree state
 function M.get_items(state)
   local connmgr = require("ora.connmgr")
-  local tree = connmgr.list_tree()
+  local ok, tree = pcall(connmgr.list_tree)
+  if not ok then
+    local err_msg = tostring(tree)
+    renderer.show_nodes({
+      {
+        id       = "error",
+        name     = "Error: " .. err_msg,
+        type     = "message",
+        path     = "error",
+        children = {},
+        extra    = {},
+      },
+    }, state)
+    return
+  end
 
   local items = build_nodes(state, tree, "")
 

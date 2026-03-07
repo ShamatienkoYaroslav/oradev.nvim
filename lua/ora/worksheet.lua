@@ -67,7 +67,12 @@ function M.create(opts)
   _counter = _counter + 1
   local name  = opts.name or ("worksheet-" .. _counter)
   local bufnr = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_buf_set_name(bufnr, "ora://" .. name)
+  local buf_name = "ora://" .. name
+  local existing = vim.fn.bufnr(buf_name)
+  if existing ~= -1 then
+    vim.api.nvim_buf_delete(existing, { force = true })
+  end
+  vim.api.nvim_buf_set_name(bufnr, buf_name)
   vim.api.nvim_buf_set_option(bufnr, "buftype",   "")
   vim.api.nvim_buf_set_option(bufnr, "swapfile",  false)
 

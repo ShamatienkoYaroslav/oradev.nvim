@@ -1401,6 +1401,69 @@ function M.fetch_ords_module_handlers(conn, module_id, callback)
   end)
 end
 
+---Fetch all ORDS templates across all modules (with module context).
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(templates: {id: string, uri_template: string, module_name: string, module_id: string}[]|nil, err: string|nil)
+function M.fetch_all_ords_templates(conn, callback)
+  run_multi_query(conn,
+    "SELECT t.id, t.uri_template, m.name AS module_name, m.id AS module_id " ..
+    "FROM user_ords_templates t " ..
+    "JOIN user_ords_modules m ON m.id = t.module_id " ..
+    "ORDER BY m.name, t.uri_template",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local templates = {}
+      for _, item in ipairs(items or {}) do
+        local id  = item.ID or item.id
+        local tpl = item.URI_TEMPLATE or item.uri_template
+        local mn  = item.MODULE_NAME or item.module_name
+        local mid = item.MODULE_ID or item.module_id
+        if tpl and tpl ~= vim.NIL then
+          table.insert(templates, {
+            id          = tostring(id or ""),
+            uri_template = tostring(tpl),
+            module_name = (mn and mn ~= vim.NIL) and tostring(mn) or "",
+            module_id   = tostring(mid or ""),
+          })
+        end
+      end
+      callback(templates, nil)
+    end)
+end
+
+---Fetch all ORDS handlers across all modules and templates (with full context).
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(handlers: {id: string, method: string, source_type: string, uri_template: string, module_name: string}[]|nil, err: string|nil)
+function M.fetch_all_ords_handlers(conn, callback)
+  run_multi_query(conn,
+    "SELECT h.id, h.method, h.source_type, t.uri_template, m.name AS module_name " ..
+    "FROM user_ords_handlers h " ..
+    "JOIN user_ords_templates t ON t.id = h.template_id " ..
+    "JOIN user_ords_modules m ON m.id = t.module_id " ..
+    "ORDER BY m.name, t.uri_template, h.method",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local handlers = {}
+      for _, item in ipairs(items or {}) do
+        local id     = item.ID or item.id
+        local method = item.METHOD or item.method
+        local stype  = item.SOURCE_TYPE or item.source_type
+        local tpl    = item.URI_TEMPLATE or item.uri_template
+        local mn     = item.MODULE_NAME or item.module_name
+        if method and method ~= vim.NIL then
+          table.insert(handlers, {
+            id           = tostring(id or ""),
+            method       = tostring(method),
+            source_type  = (stype and stype ~= vim.NIL) and tostring(stype) or "",
+            uri_template = (tpl and tpl ~= vim.NIL) and tostring(tpl) or "",
+            module_name  = (mn and mn ~= vim.NIL) and tostring(mn) or "",
+          })
+        end
+      end
+      callback(handlers, nil)
+    end)
+end
+
 ---Run a CLOB-returning SELECT and return the plain-text result as lines.
 ---@param conn     {key: string, is_named: boolean}
 ---@param sql      string  SQL that returns a single CLOB column
