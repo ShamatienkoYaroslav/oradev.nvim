@@ -1,0 +1,36 @@
+[+] Add a status line (not editable) for a worksheet and show the current connection name
+[+] Add the connections/schemas explorer (neo  [ ]tree)
+[+] Add command to edit a package specification or body
+[+] show params for functions and procedures
+[+] change connection for a worksheet
+[+] show ORDS: modules, templates, handlers
+[+] Add views
+[+] add Synonyms
+[+] Add the Object Open command (OraObjectOpen). It must ask for connection, ask for the object name (should work like Grep), ask what to open (if needed)
+[ ] Add support for formatting rules
+[+] Add triggers
+[+] Add types
+[+] Add sequences
+[+] Add Mviews
+[+] Add Mview Logs
+[+] Add indexes
+[+] Use dbms_metadata to fetch the plsql code and skip formatting
+[ ] Add formatting command for worksheets
+[ ] Global search in packages, functions, procedures, triggers and types
+[+] Add icons to the worksheet list
+[ ] Add support for DBMS_SCHEDULER objects:
+  [ ] Jobs (USER_SCHEDULER_JOBS)
+  [ ] Programs (USER_SCHEDULER_PROGRAMS)
+  [ ] Schedules (USER_SCHEDULER_SCHEDULES)
+  [ ] Chains, Chain Steps, Chain Rules (USER_SCHEDULER_CHAINS, \_CHAIN_STEPS, \_CHAIN_RULES)
+  [ ] Job Classes (USER_SCHEDULER_JOB_CLASSES)
+  [ ] Windows, Window Groups (USER_SCHEDULER_WINDOWS, \_WINDOW_GROUPS)
+  [ ] Credentials (USER_SCHEDULER_CREDENTIALS)
+  [ ] Destinations
+  [ ] File Watchers (USER_SCHEDULER_FILE_WATCHERS)
+  [ ] Groups (USER_SCHEDULER_GROUPS, \_GROUP_MEMBERS)
+  [ ] Logs: USER_SCHEDULER_JOB_LOG, USER_SCHEDULER_JOB_RUN_DETAILS
+[ ] Add enable/disable to a trigger node
+[+] Show triggers under tables
+[ ] Add AQs
+[ ] Add LSP for SQL and PL/SQL

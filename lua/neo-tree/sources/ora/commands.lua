@@ -5,6 +5,8 @@ local utils = require("neo-tree.utils")
 local manager = require("neo-tree.sources.manager")
 local renderer = require("neo-tree.ui.renderer")
 
+local notify = require("ora.notify")
+
 ---@class neotree.sources.Ora.Commands : neotree.sources.Common.Commands
 local M = {}
 
@@ -46,11 +48,10 @@ local function open_ws_in_main(ws)
 end
 
 ---Format the content of a worksheet buffer using SQLcl's formatter.
----Errors are silently ignored (the unformatted content remains).
 ---@param bufnr integer
 local function format_buffer(bufnr)
   local format = require("ora.format")
-  format.run(bufnr, function(_) end)
+  format.run(bufnr, function(err) if err then notify.error("ora", "format failed: " .. err) end end)
 end
 
 ---Fetch a DROP DDL statement from the database and open it in a worksheet.
@@ -61,14 +62,14 @@ end
 local function open_drop_worksheet(state, conn_name, object_name, object_type)
   local schema = require("ora.schema")
   local conn   = { key = conn_name, is_named = true }
-  local notify = require("ora.notify")
+
   local nid    = "ora_open"
   notify.progress(nid, "Loading DROP DDL…")
 
   schema.fetch_drop_ddl(conn, object_type, object_name, function(lines, err)
     if err then
       notify.error(nid, "Failed to load DROP DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -205,7 +206,7 @@ M._toggle_connection = function(state, node)
   node.extra.loading = true
   renderer.redraw(state)
 
-  local notify = require("ora.notify")
+
   local nid = "ora_conn"
   notify.progress(nid, "Connecting to " .. name .. "…")
 
@@ -312,7 +313,7 @@ M._toggle_category = function(state, node)
   fetch_fn(function(names, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -347,7 +348,7 @@ M._toggle_table = function(state, node)
   local conn = { key = conn_name, is_named = true }
 
   local results = {}
-  local pending = 4
+  local pending = 5
 
   local function on_done()
     pending = pending - 1
@@ -373,6 +374,7 @@ M._toggle_table = function(state, node)
     for _, c in ipairs(results.columns or {}) do table.insert(children, c) end
     for _, c in ipairs(results.indexes or {}) do table.insert(children, c) end
     for _, c in ipairs(results.constraints or {}) do table.insert(children, c) end
+    for _, c in ipairs(results.triggers or {}) do table.insert(children, c) end
 
     M._set_category_children(state, node, conn_name, children)
   end
@@ -380,6 +382,8 @@ M._toggle_table = function(state, node)
   schema.fetch_columns_with_types(conn, table_name, function(cols, err)
     if not err then
       results.columns = items.make_column_children(conn_name, table_name, cols or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -387,6 +391,8 @@ M._toggle_table = function(state, node)
   schema.fetch_indexes(conn, table_name, function(names, err)
     if not err then
       results.indexes = items.make_index_children(conn_name, table_name, names or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -394,6 +400,8 @@ M._toggle_table = function(state, node)
   schema.fetch_constraints(conn, table_name, function(names, err)
     if not err then
       results.constraints = items.make_constraint_children(conn_name, table_name, names or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -401,6 +409,17 @@ M._toggle_table = function(state, node)
   schema.fetch_comments(conn, table_name, function(comments, err)
     if not err then
       results.col_comments = comments or {}
+    else
+      notify.error("ora", err)
+    end
+    on_done()
+  end)
+
+  schema.fetch_triggers_for_table(conn, table_name, function(triggers, err)
+    if not err then
+      results.triggers = items.make_trigger_children(conn_name, triggers or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -461,6 +480,8 @@ M._toggle_view = function(state, node)
   schema.fetch_columns_with_types(conn, view_name, function(cols, err)
     if not err then
       results.columns = items.make_column_children(conn_name, view_name, cols or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -468,6 +489,8 @@ M._toggle_view = function(state, node)
   schema.fetch_comments(conn, view_name, function(comments, err)
     if not err then
       results.col_comments = comments or {}
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -528,6 +551,8 @@ M._toggle_mview = function(state, node)
   schema.fetch_columns_with_types(conn, mview_name, function(cols, err)
     if not err then
       results.columns = items.make_column_children(conn_name, mview_name, cols or {})
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -535,6 +560,8 @@ M._toggle_mview = function(state, node)
   schema.fetch_comments(conn, mview_name, function(comments, err)
     if not err then
       results.col_comments = comments or {}
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -562,14 +589,14 @@ M._open_mview_action = function(state, node)
     open_ws_in_main(ws)
   else
     -- DDL
-    local notify = require("ora.notify")
+  
     local nid = "ora_open"
     notify.progress(nid, "Loading materialized view DDL…")
     local conn = { key = conn_name, is_named = true }
     require("ora.schema").fetch_object_ddl(conn, "MATERIALIZED_VIEW", mview_name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       local display = schema_name(state, conn_name) .. "." .. mview_name .. " (Materialized View DDL)"
@@ -608,7 +635,7 @@ M._open_mview_log_ddl = function(state, node)
   require("ora.schema").fetch_object_ddl(conn, "MATERIALIZED_VIEW_LOG", master, function(lines, err)
     if err then
       notify.error(nid, "Failed to load DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
     local ws_mod  = require("ora.worksheet")
@@ -651,7 +678,7 @@ M._open_view_action = function(state, node)
     local schema = require("ora.schema")
     local conn = { key = conn_name, is_named = true }
 
-    local notify = require("ora.notify")
+  
     local nid = "ora_open"
     notify.progress(nid, "Loading view DDL…")
 
@@ -661,7 +688,7 @@ M._open_view_action = function(state, node)
 
       if err then
         notify.error(nid, "Failed to load view DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
 
@@ -740,7 +767,7 @@ M._open_table_action = function(state, node)
 
     local schema = require("ora.schema")
     local conn = { key = conn_name, is_named = true }
-    local notify = require("ora.notify")
+  
     local nid = "ora_open"
     notify.progress(nid, "Loading DDL…")
 
@@ -750,7 +777,7 @@ M._open_table_action = function(state, node)
 
       if err then
         notify.error(nid, "Failed to load DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
 
@@ -797,7 +824,7 @@ M._open_synonym_ddl = function(state, node)
   local synonym_name = node.extra.synonym_name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid    = "ora_open"
   notify.progress(nid, "Loading synonym DDL…")
 
@@ -805,7 +832,7 @@ M._open_synonym_ddl = function(state, node)
   schema.fetch_synonym_ddl(conn, synonym_name, function(lines, err)
     if err then
       notify.error(nid, "Failed to load synonym DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -840,7 +867,7 @@ M._open_sequence_ddl = function(state, node)
   local sequence_name = node.extra.sequence_name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid    = "ora_open"
   notify.progress(nid, "Loading sequence DDL…")
 
@@ -848,7 +875,7 @@ M._open_sequence_ddl = function(state, node)
   schema.fetch_object_ddl(conn, "SEQUENCE", sequence_name, function(lines, err)
     if err then
       notify.error(nid, "Failed to load sequence DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -883,7 +910,7 @@ M._open_index_ddl = function(state, node)
   local index_name = node.extra.index_name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid    = "ora_open"
   notify.progress(nid, "Loading index DDL…")
 
@@ -891,7 +918,7 @@ M._open_index_ddl = function(state, node)
   schema.fetch_index_ddl(conn, index_name, function(lines, err)
     if err then
       notify.error(nid, "Failed to load index DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -933,7 +960,7 @@ M._open_package_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading package source…")
 
@@ -943,7 +970,7 @@ M._open_package_source = function(state, node)
 
     if err then
       notify.error(nid, "Failed to load package source")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1052,6 +1079,8 @@ M._toggle_package = function(state, node)
   schema.fetch_package_subprograms_with_types(conn, pkg_name, function(subs, err)
     if not err then
       results.subprograms = subs or {}
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -1070,7 +1099,7 @@ M._open_type_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading type source…")
 
@@ -1080,7 +1109,7 @@ M._open_type_source = function(state, node)
 
     if err then
       notify.error(nid, "Failed to load type source")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1166,6 +1195,8 @@ M._toggle_type = function(state, node)
   schema.fetch_package_subprograms_with_types(conn, type_name, function(subs, err)
     if not err then
       results.subprograms = subs or {}
+    else
+      notify.error("ora", err)
     end
     on_done()
   end)
@@ -1197,7 +1228,7 @@ M._toggle_func_or_proc = function(state, node)
   schema.fetch_object_params(conn, object_name, function(params, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -1221,7 +1252,7 @@ M._open_object_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading source…")
 
@@ -1231,7 +1262,7 @@ M._open_object_source = function(state, node)
 
     if err then
       notify.error(nid, "Failed to load source")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1310,7 +1341,7 @@ M._toggle_subprogram = function(state, node)
   schema.fetch_subprogram_params(conn, pkg_name, sub_name, function(params, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -1347,7 +1378,7 @@ M._toggle_ords_module = function(state, node)
   schema.fetch_ords_templates(conn, module_id, function(templates, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -1385,7 +1416,7 @@ M._toggle_ords_template = function(state, node)
   schema.fetch_ords_handlers(conn, template_id, function(handlers, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -1423,7 +1454,7 @@ M._toggle_ords_handler = function(state, node)
   schema.fetch_ords_parameters(conn, handler_id, function(params, err)
     node.extra.loading = false
     if err then
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       renderer.redraw(state)
       return
     end
@@ -1446,7 +1477,7 @@ M._open_ords_define_module = function(state, node)
   local module_name = node.name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading module details…")
 
@@ -1454,7 +1485,7 @@ M._open_ords_define_module = function(state, node)
   schema.fetch_ords_module_details(conn, module_name, function(d, err)
     if err then
       notify.error(nid, "Failed to load module details")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
     if not d then
@@ -1500,7 +1531,7 @@ M._open_ords_define_template = function(state, node)
   local template_id = node.extra.template_id
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading template details…")
 
@@ -1508,7 +1539,7 @@ M._open_ords_define_template = function(state, node)
   schema.fetch_ords_template_details(conn, template_id, function(d, err)
     if err then
       notify.error(nid, "Failed to load template details")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
     if not d then
@@ -1555,7 +1586,7 @@ M._open_ords_define_handler = function(state, node)
   local handler_id = node.extra.handler_id
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading handler details…")
 
@@ -1621,11 +1652,16 @@ M._open_ords_define_handler = function(state, node)
   end
 
   schema.fetch_ords_handler_details(conn, handler_id, function(d, err)
-    if not err then results.details = d end
+    if not err then
+      results.details = d
+    else
+      notify.error("ora", err)
+    end
     on_done()
   end)
 
-  schema.fetch_ords_handler_source(conn, handler_id, function(src, _)
+  schema.fetch_ords_handler_source(conn, handler_id, function(src, err)
+    if err then notify.error("ora", err) end
     results.source = src or {}
     on_done()
   end)
@@ -1686,7 +1722,7 @@ M._open_ords_module_ddl = function(state, node)
   local module_id   = node.extra.module_id
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading module DDL…")
 
@@ -1696,7 +1732,7 @@ M._open_ords_module_ddl = function(state, node)
   schema.fetch_ords_module_handlers(conn, module_id, function(rows, err)
     if err then
       notify.error(nid, "Failed to load module DDL")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1797,7 +1833,8 @@ M._open_ords_module_ddl = function(state, node)
     end
 
     for i, row in ipairs(rows) do
-      schema.fetch_ords_handler_source(conn, row.handler_id, function(src_lines, _)
+      schema.fetch_ords_handler_source(conn, row.handler_id, function(src_lines, err)
+        if err then notify.error("ora", err) end
         sources[row.handler_id] = src_lines or {}
         on_done()
       end)
@@ -1828,7 +1865,7 @@ M._open_ords_export_schema = function(state, node)
   local conn_name = node.extra.conn_name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Exporting ORDS schema…")
 
@@ -1836,7 +1873,7 @@ M._open_ords_export_schema = function(state, node)
   schema.fetch_ords_export_schema(conn, function(lines, err)
     if err then
       notify.error(nid, "Failed to export ORDS schema")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1869,7 +1906,7 @@ M._open_ords_export_module = function(state, node)
   local module_name = node.name
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Exporting ORDS module…")
 
@@ -1877,7 +1914,7 @@ M._open_ords_export_module = function(state, node)
   schema.fetch_ords_export_module(conn, module_name, function(lines, err)
     if err then
       notify.error(nid, "Failed to export ORDS module")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -1911,7 +1948,7 @@ M._open_ords_handler_source = function(state, node)
   local method     = node.extra.method or "handler"
   local conn = { key = conn_name, is_named = true }
 
-  local notify = require("ora.notify")
+
   local nid = "ora_open"
   notify.progress(nid, "Loading handler source…")
 
@@ -1919,7 +1956,7 @@ M._open_ords_handler_source = function(state, node)
   schema.fetch_ords_handler_source(conn, handler_id, function(lines, err)
     if err then
       notify.error(nid, "Failed to load handler source")
-      vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+      notify.error("ora", err)
       return
     end
 
@@ -2354,10 +2391,10 @@ M.show_actions = function(state)
         node:collapse()
         local ora_source = require("neo-tree.sources.ora")
         ora_source.navigate(state)
-        local notify = require("ora.notify")
+      
         notify.done("ora_conn", "Disconnected from " .. name)
       elseif choice == "Show connection string" then
-        local notify = require("ora.notify")
+      
         local nid = "ora_connstr"
         notify.progress(nid, "Fetching connection info…")
         vim.schedule(function()
@@ -2581,13 +2618,13 @@ M.show_actions = function(state)
       if choice == "Show DDL" then
         local schema = require("ora.schema")
         local conn = { key = conn_name, is_named = true }
-        local notify = require("ora.notify")
+      
         local nid = "ora_open"
         notify.progress(nid, "Loading trigger DDL…")
         schema.fetch_object_ddl(conn, "TRIGGER", trigger_name, function(lines, err)
           if err then
             notify.error(nid, "Failed to load trigger DDL")
-            vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+            notify.error("ora", err)
             return
           end
           local ws_mod  = require("ora.worksheet")

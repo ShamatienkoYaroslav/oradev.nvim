@@ -117,7 +117,7 @@ local function open_worksheet(opts)
   vim.api.nvim_win_set_buf(0, ws.bufnr)
   ws_mod.refresh_winbar(ws)
 
-  require("ora.format").run(ws.bufnr, function(_) end)
+  require("ora.format").run(ws.bufnr, function(err) if err then require("ora.notify").error("ora", "format failed: " .. err) end end)
 end
 
 ---Create a worksheet for ORDS content (no SCHEMA.NAME prefix in display).
@@ -135,7 +135,7 @@ local function open_ords_worksheet(opts)
   vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
   vim.api.nvim_win_set_buf(0, ws.bufnr)
   ws_mod.refresh_winbar(ws)
-  require("ora.format").run(ws.bufnr, function(_) end)
+  require("ora.format").run(ws.bufnr, function(err) if err then require("ora.notify").error("ora", "format failed: " .. err) end end)
 end
 
 ---Execute an action on a selected object.
@@ -157,7 +157,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_object_ddl(conn, meta_type, object.name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       open_worksheet({
@@ -190,7 +190,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_object_ddl(conn, meta_type, object.name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load source")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       local suffix = otype == "FUNCTION" and "Function Body"
@@ -213,7 +213,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_object_ddl(conn, "PACKAGE_SPEC", object.name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load source")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       open_worksheet({
@@ -233,7 +233,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_ords_export_module(conn, object.name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load module DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       open_ords_worksheet({
@@ -250,7 +250,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_ords_module_details(conn, object.name, function(d, err)
       if err or not d then
         notify.error(nid, "Failed to load module details")
-        if err then vim.notify("[ora] " .. err, vim.log.levels.ERROR) end
+        if err then notify.error("ora", err) end
         return
       end
       open_ords_worksheet({
@@ -279,7 +279,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_ords_template_details(conn, object.template_id, function(d, err)
       if err or not d then
         notify.error(nid, "Failed to load template details")
-        if err then vim.notify("[ora] " .. err, vim.log.levels.ERROR) end
+        if err then notify.error("ora", err) end
         return
       end
       open_ords_worksheet({
@@ -345,10 +345,15 @@ local function execute_action(conn_name, schema, object, action)
       notify.done(nid, "Handler DDL loaded")
     end
     s.fetch_ords_handler_details(conn, object.handler_id, function(d, err)
-      if not err then results.details = d end
+      if not err then
+        results.details = d
+      else
+        notify.error("ora", err)
+      end
       on_done()
     end)
-    s.fetch_ords_handler_source(conn, object.handler_id, function(src, _)
+    s.fetch_ords_handler_source(conn, object.handler_id, function(src, err)
+      if err then notify.error("ora", err) end
       results.source = src or {}
       on_done()
     end)
@@ -358,7 +363,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_ords_handler_source(conn, object.handler_id, function(lines, err)
       if err then
         notify.error(nid, "Failed to load handler source")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       open_ords_worksheet({
@@ -375,7 +380,7 @@ local function execute_action(conn_name, schema, object, action)
     s.fetch_drop_ddl(conn, otype, object.name, function(lines, err)
       if err then
         notify.error(nid, "Failed to load DROP DDL")
-        vim.notify("[ora] " .. err, vim.log.levels.ERROR)
+        notify.error("ora", err)
         return
       end
       if not lines or #lines == 0 then
@@ -547,7 +552,7 @@ function M.open()
 
       if #objects == 0 then
         notify.done(nid, "No objects found")
-        vim.notify("[ora] No schema objects found", vim.log.levels.WARN)
+        notify.warn("ora", "No schema objects found")
         return
       end
 
@@ -556,21 +561,28 @@ function M.open()
     end
 
     s.fetch_objects_by_pattern(conn, "%%", function(objects, err)
-      if not err then results.objects = objects end
+      if not err then
+        results.objects = objects
+      else
+        notify.error("ora", err)
+      end
       on_done()
     end)
 
-    s.fetch_ords_modules(conn, function(modules, _)
+    s.fetch_ords_modules(conn, function(modules, err)
+      if err then notify.error("ora", err) end
       results.modules = modules or {}
       on_done()
     end)
 
-    s.fetch_all_ords_templates(conn, function(templates, _)
+    s.fetch_all_ords_templates(conn, function(templates, err)
+      if err then notify.error("ora", err) end
       results.templates = templates or {}
       on_done()
     end)
 
-    s.fetch_all_ords_handlers(conn, function(handlers, _)
+    s.fetch_all_ords_handlers(conn, function(handlers, err)
+      if err then notify.error("ora", err) end
       results.handlers = handlers or {}
       on_done()
     end)

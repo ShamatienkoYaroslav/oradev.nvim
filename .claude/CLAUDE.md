@@ -250,6 +250,16 @@ count, buffer naming) rather than direct session-table inspection.
 - **nui.input stub**: set `package.loaded["nui.input"]` BEFORE `fresh()` (loaded at
   module load time). Do NOT clear nui.input inside `fresh()`.
 
+## Error handling
+
+All user-facing errors, warnings, and info messages **must** go through
+`require("ora.notify")` — never call `vim.notify` directly outside of
+`notify.lua`. The module provides `error(id, msg)`, `warn(id, msg)`, and
+`info(id, msg)`, each with a `vim.notify` fallback when snacks.notifier is
+unavailable. In async callbacks that receive an `err` parameter, always handle
+the error case — do not ignore it with `_` or leave `if not err then … end`
+without an `else` branch. Report swallowed errors with `notify.error("ora", err)`.
+
 ## Conventions
 
 - LuaCATS annotations (`---@param`, `---@class`, etc.) are used throughout — keep them

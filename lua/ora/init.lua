@@ -1,5 +1,6 @@
 local M = {}
 
+local notify = require("ora.notify")
 local _setup_done = false
 
 
@@ -20,7 +21,7 @@ end
 ---Show saved connections from the SQLcl connection manager and connect to one.
 function M.list()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
   require("ora.ui.picker").open()
@@ -30,7 +31,7 @@ end
 ---@param url string
 function M.connect(url)
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
   require("ora.connection").connect(url, url)
@@ -40,7 +41,7 @@ end
 ---The connection can be chosen later when executing the worksheet.
 function M.new_worksheet()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
 
@@ -52,7 +53,7 @@ end
 ---List all open worksheets in a floating picker.
 function M.list_worksheets()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
   require("ora.ui.worksheets_picker").open()
@@ -63,7 +64,7 @@ end
 ---connection picker is shown first.
 function M.execute_worksheet()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
 
@@ -113,7 +114,7 @@ end
 ---Format the current worksheet SQL using SQLcl's built-in formatter.
 function M.format_worksheet()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
 
@@ -123,7 +124,7 @@ function M.format_worksheet()
 
   require("ora.format").run(ws.bufnr, function(err)
     if err then
-      vim.notify("[ora] format failed: " .. err, vim.log.levels.ERROR)
+      notify.error("ora", "format failed: " .. err)
     end
   end)
 end
@@ -132,7 +133,7 @@ end
 ---Opens the connection picker; the selected connection replaces the current one.
 function M.change_worksheet_connection()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
 
@@ -150,7 +151,7 @@ end
 ---Open the quick action picker: find objects by pattern and act on them.
 function M.quick_action()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
   require("ora.ui.quick_action").open()
@@ -159,7 +160,7 @@ end
 ---Open the neo-tree Oracle connections/schemas explorer.
 function M.explorer()
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
   require("neo-tree.command").execute({ source = "ora", position = "left" })
@@ -171,16 +172,16 @@ end
 ---@param url?  string  user[/pass]@host:port/service
 function M.add_connection(name, url)
   if not _setup_done then
-    vim.notify("[ora] call require('ora').setup({...}) first", vim.log.levels.ERROR)
+    notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
 
   local function do_add(n, u)
     local ok, err = require("ora.connmgr").add(n, u)
     if ok then
-      vim.notify(string.format("[ora] connection '%s' added", n), vim.log.levels.INFO)
+      notify.info("ora", string.format("connection '%s' added", n))
     else
-      vim.notify("[ora] failed to add connection: " .. (err or ""), vim.log.levels.ERROR)
+      notify.error("ora", "failed to add connection: " .. (err or ""))
     end
   end
 

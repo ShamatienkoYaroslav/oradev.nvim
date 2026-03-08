@@ -27,8 +27,7 @@ local M = {}
 function M.open()
   local worksheets = require("ora.worksheet").list()
   if #worksheets == 0 then
-    vim.notify("[ora] No worksheets open. Use :OraWorksheetNew to create one.",
-      vim.log.levels.INFO)
+    require("ora.notify").info("ora", "No worksheets open. Use :OraWorksheetNew to create one.")
     return
   end
 

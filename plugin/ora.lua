@@ -11,7 +11,7 @@ end, { desc = "List saved Oracle connections (from SQLcl connmgr) and connect" }
 vim.api.nvim_create_user_command("OraConnect", function(opts)
   local url = opts.args
   if url == "" then
-    vim.notify("[ora] Usage: :OraConnect <connection-string>", vim.log.levels.WARN)
+    require("ora.notify").warn("ora", "Usage: :OraConnect <connection-string>")
     return
   end
   require("ora").connect(url)
@@ -52,17 +52,15 @@ end, { desc = "Find schema objects by pattern and act on them" })
 vim.api.nvim_create_user_command("OraExplorer", function()
   local ok = pcall(require, "neo-tree")
   if not ok then
-    vim.notify("[ora] neo-tree.nvim is required for :OraExplorer", vim.log.levels.ERROR)
+    require("ora.notify").error("ora", "neo-tree.nvim is required for :OraExplorer")
     return
   end
   local ok2, err = pcall(require("neo-tree.command").execute, { source = "ora", position = "left" })
   if not ok2 then
-    vim.notify(
-      '[ora] Failed to open explorer: ' .. tostring(err) .. '\n'
+    require("ora.notify").error("ora",
+      'Failed to open explorer: ' .. tostring(err) .. '\n'
         .. 'Make sure "ora" is in your neo-tree sources config:\n'
-        .. '  require("neo-tree").setup({ sources = { "filesystem", "ora" }, ora = { ... } })',
-      vim.log.levels.ERROR
-    )
+        .. '  require("neo-tree").setup({ sources = { "filesystem", "ora" }, ora = { ... } })')
   end
 end, { desc = "Open Oracle connections/schemas explorer" })
 
@@ -73,7 +71,7 @@ vim.api.nvim_create_user_command("OraAddConnection", function(opts)
     -- Split on the first space: first token = name, rest = url
     local name, url = args:match("^(%S+)%s+(.+)$")
     if not name then
-      vim.notify("[ora] Usage: :OraAddConnection [name url]", vim.log.levels.WARN)
+      require("ora.notify").warn("ora", "Usage: :OraAddConnection [name url]")
       return
     end
     require("ora").add_connection(name, url)

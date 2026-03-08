@@ -8,7 +8,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
 - [SQLcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/) installed and accessible
 - [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
 - [plenary.nvim](https://github.com/nvim-lua/plenary.nvim)
-- [snacks.nvim](https://github.com/folke/snacks.nvim)
+- [snacks.nvim](https://github.com/folke/snacks.nvim) (optional, for rich notifications; falls back to `vim.notify`)
 - [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for the schema explorer)
 
 ## Installation
@@ -22,7 +22,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
     "MunifTanjim/nui.nvim",
     "nvim-lua/plenary.nvim",
     "folke/snacks.nvim",
-    "nvim-neo-tree/neo-tree.nvim", -- optional, for :OraExplorer
+    "nvim-neo-tree/neo-tree.nvim",
   },
   config = function()
     require("ora").setup({
@@ -106,9 +106,9 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 
 ### Quick Action
 
-| Command           | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| `:OraQuickAction` | Find schema objects by pattern and act on them       |
+| Command           | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `:OraQuickAction` | Find schema objects by pattern and act on them |
 
 ### Explorer
 
@@ -137,61 +137,61 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 
 ### Quick open with `o` / `O`
 
-| Node type | `o` (primary)     | `O` (secondary) |
-| --------- | ----------------- | --------------- |
-| Table     | Show DDL          | Show data       |
-| View      | Show DDL          | Show data       |
-| Materialized View | Show DDL | Show data       |
-| Materialized View Log | Show DDL | —           |
-| Index     | Show DDL          | —               |
-| Synonym   | Show DDL          | —               |
-| Sequence  | Show DDL          | —               |
-| Trigger   | Show source       | —               |
-| Type      | Show specification | Show body / Add body |
-| Function    | Show body          | —                    |
-| Procedure   | Show body          | —                    |
-| Package     | Show specification | Show body / Add body |
-| ORDS Module   | Define module      | Full export          |
-| ORDS Template | Define template    | —                    |
-| ORDS Handler  | Define handler     | Show source          |
-| ORDS Parameter | Define parameter  | —                    |
+| Node type             | `o` (primary)      | `O` (secondary)      |
+| --------------------- | ------------------ | -------------------- |
+| Table                 | Show DDL           | Show data            |
+| View                  | Show DDL           | Show data            |
+| Materialized View     | Show DDL           | Show data            |
+| Materialized View Log | Show DDL           | —                    |
+| Index                 | Show DDL           | —                    |
+| Synonym               | Show DDL           | —                    |
+| Sequence              | Show DDL           | —                    |
+| Trigger               | Show source        | —                    |
+| Type                  | Show specification | Show body / Add body |
+| Function              | Show body          | —                    |
+| Procedure             | Show body          | —                    |
+| Package               | Show specification | Show body / Add body |
+| ORDS Module           | Define module      | Full export          |
+| ORDS Template         | Define template    | —                    |
+| ORDS Handler          | Define handler     | Show source          |
+| ORDS Parameter        | Define parameter   | —                    |
 
 ### All actions with `a`
 
-| Node type  | Actions                                                                    |
-| ---------- | -------------------------------------------------------------------------- |
-| Connection | Connect (if disconnected), Disconnect (if connected), Show conn. string   |
-| Package    | Show specification, Show body / Add body, Drop package, Drop package body  |
-| Table      | Show DDL, Show data, Drop table                                            |
-| View       | Show DDL, Show data, Drop view                                             |
-| Materialized View | Show DDL, Show data, Drop materialized view                          |
-| Materialized View Log | Show DDL, Drop materialized view log                              |
-| Index      | Show DDL, Drop index                                                       |
-| Synonym    | Show DDL, Drop synonym                                                     |
-| Sequence   | Show DDL, Drop sequence                                                    |
-| Trigger    | Show DDL, Drop trigger                                                     |
-| Type       | Show specification, Show body / Add body, Drop type, Drop type body        |
-| Function   | Show body, Drop function                                                   |
-| Procedure  | Show body, Drop procedure                                                  |
+| Node type             | Actions                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| Connection            | Connect (if disconnected), Disconnect (if connected), Show conn. string   |
+| Package               | Show specification, Show body / Add body, Drop package, Drop package body |
+| Table                 | Show DDL, Show data, Drop table                                           |
+| View                  | Show DDL, Show data, Drop view                                            |
+| Materialized View     | Show DDL, Show data, Drop materialized view                               |
+| Materialized View Log | Show DDL, Drop materialized view log                                      |
+| Index                 | Show DDL, Drop index                                                      |
+| Synonym               | Show DDL, Drop synonym                                                    |
+| Sequence              | Show DDL, Drop sequence                                                   |
+| Trigger               | Show DDL, Drop trigger                                                    |
+| Type                  | Show specification, Show body / Add body, Drop type, Drop type body       |
+| Function              | Show body, Drop function                                                  |
+| Procedure             | Show body, Drop procedure                                                 |
 
 Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
 
 ### Supported object types
 
-| Object type    | Features                                                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------ |
-| **Tables**     | Columns (with data type), indexes, constraints, table comment, column comments                         |
-| **Views**      | Columns (with data type), column comments, DDL, data                                                   |
-| **Materialized Views** | Columns (with data type), column comments, DDL, data                                           |
-| **Materialized View Logs** | Master table name, DDL                                                                    |
-| **Indexes**    | Table name, uniqueness, DDL                                                                            |
-| **Synonyms**   | Target display (owner.name@dblink), DDL                                                                |
-| **Sequences**  | Last number, increment step, DDL                                                                       |
-| **Triggers**   | Table name, trigger type, source, DDL                                                                  |
-| **Types**      | Typecode (OBJECT/COLLECTION), specification source, body source (if exists), methods with return types  |
-| **Functions**  | Parameters (with data type), return type, body source                                                  |
-| **Procedures** | Parameters (with data type), body source                                                               |
-| **Packages**   | Specification source, body source (shown only if exists), subprograms with parameters and return types |
+| Object type                | Features                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Tables**                 | Columns (with data type), indexes, constraints, table comment, column comments                         |
+| **Views**                  | Columns (with data type), column comments, DDL, data                                                   |
+| **Materialized Views**     | Columns (with data type), column comments, DDL, data                                                   |
+| **Materialized View Logs** | Master table name, DDL                                                                                 |
+| **Indexes**                | Table name, uniqueness, DDL                                                                            |
+| **Synonyms**               | Target display (owner.name@dblink), DDL                                                                |
+| **Sequences**              | Last number, increment step, DDL                                                                       |
+| **Triggers**               | Table name, trigger type, source, DDL                                                                  |
+| **Types**                  | Typecode (OBJECT/COLLECTION), specification source, body source (if exists), methods with return types |
+| **Functions**              | Parameters (with data type), return type, body source                                                  |
+| **Procedures**             | Parameters (with data type), body source                                                               |
+| **Packages**               | Specification source, body source (shown only if exists), subprograms with parameters and return types |
 
 ### Tree structure
 

@@ -1626,6 +1626,32 @@ function M.fetch_triggers(conn, callback)
     end)
 end
 
+---Fetch triggers for a specific table from user_triggers.
+---@param conn       {key: string, is_named: boolean}
+---@param table_name string
+---@param callback   fun(triggers: {name: string, table_name: string, trigger_type: string}[]|nil, err: string|nil)
+function M.fetch_triggers_for_table(conn, table_name, callback)
+  run_multi_query(conn,
+    "SELECT trigger_name, table_name, trigger_type FROM user_triggers WHERE table_name = '" .. table_name .. "' ORDER BY trigger_name",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local triggers = {}
+      for _, item in ipairs(items or {}) do
+        local name  = item.TRIGGER_NAME  or item.trigger_name
+        local tname = item.TABLE_NAME    or item.table_name
+        local ttype = item.TRIGGER_TYPE  or item.trigger_type
+        if name and name ~= vim.NIL then
+          table.insert(triggers, {
+            name         = tostring(name),
+            table_name   = (tname and tname ~= vim.NIL) and tostring(tname) or "",
+            trigger_type = (ttype and ttype ~= vim.NIL) and tostring(ttype) or "",
+          })
+        end
+      end
+      callback(triggers, nil)
+    end)
+end
+
 ---Fetch materialized views from user_mviews with comments.
 ---@param conn     {key: string, is_named: boolean}
 ---@param callback fun(mviews: {name: string, comment: string}[]|nil, err: string|nil)

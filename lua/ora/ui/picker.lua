@@ -106,10 +106,11 @@ function M.open(opts)
     menu:unmount()
     require("ora.ui.add_connection").ask(function(name, url)
       local ok, err = require("ora.connmgr").add(name, url)
+      local ora_notify = require("ora.notify")
       if ok then
-        vim.notify(("[ora] connection '%s' added"):format(name), vim.log.levels.INFO)
+        ora_notify.info("ora", ("connection '%s' added"):format(name))
       else
-        vim.notify("[ora] failed to add connection: " .. (err or ""), vim.log.levels.ERROR)
+        ora_notify.error("ora", "failed to add connection: " .. (err or ""))
       end
     end)
   end, { noremap = true })
