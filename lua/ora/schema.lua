@@ -143,8 +143,16 @@ local function run_ddl_query(conn, object_type, object_name, callback)
       os.remove(spool)
 
       vim.schedule(function()
-        if code ~= 0 and vim.trim(raw) == "" then
-          callback(nil, "sqlcl exited with code " .. code)
+        local trimmed = vim.trim(raw)
+        if trimmed == "" then
+          callback(nil, code ~= 0 and ("sqlcl exited with code " .. code) or "empty result")
+          return
+        end
+
+        -- Detect ORA- / SP2- errors in the spool output
+        local ora_err = trimmed:match("(ORA%-[^\n]+)") or trimmed:match("(SP2%-[^\n]+)")
+        if ora_err then
+          callback(nil, ora_err)
           return
         end
 

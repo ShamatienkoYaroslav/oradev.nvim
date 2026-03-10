@@ -14,8 +14,77 @@ local _setup_done = false
 ---  })
 function M.setup(user_config)
   require("ora.config").setup(user_config)
-  vim.filetype.add({ pattern = { ["ora://worksheet%-.*"] = "plsql" } })
+  vim.filetype.add({ pattern = { ["ora://.*"] = "plsql" } })
+  require("ora.lsp").setup(require("ora.config").values)
+  M._setup_icons()
   _setup_done = true
+end
+
+-- Map worksheet icon glyphs to mini.icons highlight groups.
+local _icon_hl = {
+  ["󰆼"] = "MiniIconsOrange",  -- connection / default
+  ["󰓫"] = "MiniIconsCyan",    -- table
+  ["󰡠"] = "MiniIconsCyan",    -- view
+  ["󰊕"] = "MiniIconsPurple",  -- function
+  ["󰡱"] = "MiniIconsPurple",  -- procedure
+  ["󰏗"] = "MiniIconsOrange",  -- package
+  ["󰔖"] = "MiniIconsCyan",    -- synonym
+  ["󰌹"] = "MiniIconsYellow",  -- index
+  ["󰔚"] = "MiniIconsYellow",  -- sequence
+  ["󰒍"] = "MiniIconsGreen",   -- ords
+  ["󱐋"] = "MiniIconsRed",     -- trigger
+  ["󰕳"] = "MiniIconsCyan",    -- type
+  ["󰆴"] = "MiniIconsRed",     -- drop
+}
+
+---Hook into mini.icons so ora:// buffers show per-worksheet icons in pickers.
+function M._setup_icons()
+  local hooked = false
+
+  local function hook()
+    if hooked or not _G.MiniIcons then return end
+    hooked = true
+
+    local orig_get = MiniIcons.get
+    MiniIcons.get = function(category, name)
+      if category == "file" and type(name) == "string" and name:match("^ora://") then
+        local ws_mod = package.loaded["ora.worksheet"]
+        if ws_mod then
+          local bufnr = vim.fn.bufnr(name)
+          if bufnr ~= -1 then
+            local ws = ws_mod.find(bufnr)
+            if ws and ws.icon then
+              local glyph = ws.icon:gsub("%s+$", "")
+              return glyph, _icon_hl[glyph] or "MiniIconsOrange", false
+            end
+          end
+        end
+        return "󰆼", "MiniIconsOrange", false
+      end
+      if category == "filetype" and name == "plsql" then
+        return "󰆼", "MiniIconsOrange", false
+      end
+      return orig_get(category, name)
+    end
+  end
+
+  hook()
+  if not hooked then
+    -- Defer past all VeryLazy handlers so mini.icons has time to set _G.MiniIcons
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "VeryLazy",
+      once = true,
+      callback = function() vim.schedule(hook) end,
+    })
+    -- Fallback: lazy.nvim fires LazyLoad each time a plugin loads on-demand
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "LazyLoad",
+      callback = function()
+        hook()
+        if hooked then return true end
+      end,
+    })
+  end
 end
 
 ---Show saved connections from the SQLcl connection manager and connect to one.
@@ -48,15 +117,6 @@ function M.new_worksheet()
   local ws = require("ora.worksheet").create()
   local ws_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(ws_win, ws.bufnr)
-end
-
----List all open worksheets in a floating picker.
-function M.list_worksheets()
-  if not _setup_done then
-    notify.error("ora", "call require('ora').setup({...}) first")
-    return
-  end
-  require("ora.ui.worksheets_picker").open()
 end
 
 ---Execute the current worksheet SQL and show the result as a formatted table
@@ -103,12 +163,6 @@ function M.execute_worksheet()
       do_run()
     end)
   end
-end
-
----Run the current worksheet SQL and show the result as a formatted table.
----Alias for execute_worksheet().
-function M.worksheet_result()
-  M.execute_worksheet()
 end
 
 ---Format the current worksheet SQL using SQLcl's built-in formatter.
@@ -164,32 +218,6 @@ function M.explorer()
     return
   end
   require("neo-tree.command").execute({ source = "ora", position = "left" })
-end
-
----Add a new named connection to the SQLcl connection manager.
----Prompts for a name and connection string if not provided as arguments.
----@param name? string  connection name
----@param url?  string  user[/pass]@host:port/service
-function M.add_connection(name, url)
-  if not _setup_done then
-    notify.error("ora", "call require('ora').setup({...}) first")
-    return
-  end
-
-  local function do_add(n, u)
-    local ok, err = require("ora.connmgr").add(n, u)
-    if ok then
-      notify.info("ora", string.format("connection '%s' added", n))
-    else
-      notify.error("ora", "failed to add connection: " .. (err or ""))
-    end
-  end
-
-  if name and url then
-    do_add(name, url)
-  else
-    require("ora.ui.add_connection").ask(do_add)
-  end
 end
 
 return M

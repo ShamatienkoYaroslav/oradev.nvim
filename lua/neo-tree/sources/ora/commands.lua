@@ -952,7 +952,7 @@ M._open_package_source = function(state, node)
   local conn_name = node.extra.conn_name
   local pkg_name = node.extra.pkg_name
   local part = node.extra.part
-  local object_type = part == "spec" and "PACKAGE" or "PACKAGE BODY"
+  local metadata_type = part == "spec" and "PACKAGE_SPEC" or "PACKAGE_BODY"
 
   node.extra.loading = true
   renderer.redraw(state)
@@ -960,11 +960,10 @@ M._open_package_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-
   local nid = "ora_open"
   notify.progress(nid, "Loading package source…")
 
-  schema.fetch_source(conn, pkg_name, object_type, function(lines, err)
+  schema.fetch_object_ddl(conn, metadata_type, pkg_name, function(lines, err)
     node.extra.loading = false
     renderer.redraw(state)
 
@@ -986,18 +985,7 @@ M._open_package_source = function(state, node)
       icon         = "󰏗 ",
     })
 
-    -- Each user_source row typically ends with a trailing newline;
-    -- strip it and split any remaining embedded newlines.
-    local buf_lines = {}
-    for _, line in ipairs(lines or {}) do
-      line = line:gsub("%s+$", "")
-      if line ~= "" then
-        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
-          table.insert(buf_lines, seg)
-        end
-      end
-    end
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
 
     -- Focus the worksheet in the main editing area (not the neo-tree window)
@@ -1091,7 +1079,7 @@ M._open_type_source = function(state, node)
   local conn_name = node.extra.conn_name
   local type_name = node.extra.type_name
   local part = node.extra.part
-  local object_type = part == "spec" and "TYPE" or "TYPE BODY"
+  local metadata_type = part == "spec" and "TYPE_SPEC" or "TYPE_BODY"
 
   node.extra.loading = true
   renderer.redraw(state)
@@ -1099,11 +1087,10 @@ M._open_type_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-
   local nid = "ora_open"
   notify.progress(nid, "Loading type source…")
 
-  schema.fetch_source(conn, type_name, object_type, function(lines, err)
+  schema.fetch_object_ddl(conn, metadata_type, type_name, function(lines, err)
     node.extra.loading = false
     renderer.redraw(state)
 
@@ -1124,16 +1111,7 @@ M._open_type_source = function(state, node)
       icon         = "󰕳 ",
     })
 
-    local buf_lines = {}
-    for _, line in ipairs(lines or {}) do
-      line = line:gsub("%s+$", "")
-      if line ~= "" then
-        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
-          table.insert(buf_lines, seg)
-        end
-      end
-    end
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
     format_buffer(ws.bufnr)
@@ -1252,11 +1230,10 @@ M._open_object_source = function(state, node)
   local schema = require("ora.schema")
   local conn = { key = conn_name, is_named = true }
 
-
   local nid = "ora_open"
   notify.progress(nid, "Loading source…")
 
-  schema.fetch_source(conn, object_name, object_type, function(lines, err)
+  schema.fetch_object_ddl(conn, object_type, object_name, function(lines, err)
     node.extra.loading = false
     renderer.redraw(state)
 
@@ -1280,16 +1257,7 @@ M._open_object_source = function(state, node)
       icon         = icon,
     })
 
-    local buf_lines = {}
-    for _, line in ipairs(lines or {}) do
-      line = line:gsub("%s+$", "")
-      if line ~= "" then
-        for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
-          table.insert(buf_lines, seg)
-        end
-      end
-    end
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
 
     local wins = vim.api.nvim_tabpage_list_wins(0)
@@ -2221,11 +2189,6 @@ M._clear_cached_node = function(state, node)
   for _, children in pairs(state.ora_children) do
     if clear_in(children) then return end
   end
-end
-
----Add a new connection via the add-connection prompt.
-M.add_connection = function(state)
-  require("ora").add_connection()
 end
 
 ---Show a picker with context-appropriate actions for the current node.

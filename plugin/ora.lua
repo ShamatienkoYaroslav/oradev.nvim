@@ -25,17 +25,9 @@ vim.api.nvim_create_user_command("OraWorksheetNew", function()
   require("ora").new_worksheet()
 end, { desc = "Create a new SQL worksheet and pick a connection" })
 
-vim.api.nvim_create_user_command("OraWorksheetsList", function()
-  require("ora").list_worksheets()
-end, { desc = "List open worksheets" })
-
 vim.api.nvim_create_user_command("OraWorksheetExecute", function()
   require("ora").execute_worksheet()
 end, { desc = "Execute the current worksheet buffer against its connection" })
-
-vim.api.nvim_create_user_command("OraWorksheetResult", function()
-  require("ora").worksheet_result()
-end, { desc = "Run worksheet SQL and show result as a table in a split buffer" })
 
 vim.api.nvim_create_user_command("OraWorksheetFormat", function()
   require("ora").format_worksheet()
@@ -55,30 +47,26 @@ vim.api.nvim_create_user_command("OraExplorer", function()
     require("ora.notify").error("ora", "neo-tree.nvim is required for :OraExplorer")
     return
   end
-  local ok2, err = pcall(require("neo-tree.command").execute, { source = "ora", position = "left" })
+  -- Find the ora neo-tree window by scanning buffers directly,
+  -- since state.winid/bufnr may not be reliably set for custom sources.
+  local ora_win = nil
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    local ok_s, src = pcall(vim.api.nvim_buf_get_var, buf, "neo_tree_source")
+    if ok_s and src == "ora" then
+      ora_win = win
+      break
+    end
+  end
+  local args = ora_win
+    and { source = "ora", action = "close" }
+    or  { source = "ora", action = "focus", position = "left" }
+  local ok2, err = pcall(require("neo-tree.command").execute, args)
   if not ok2 then
     require("ora.notify").error("ora",
       'Failed to open explorer: ' .. tostring(err) .. '\n'
         .. 'Make sure "ora" is in your neo-tree sources config:\n'
         .. '  require("neo-tree").setup({ sources = { "filesystem", "ora" }, ora = { ... } })')
   end
-end, { desc = "Open Oracle connections/schemas explorer" })
+end, { desc = "Toggle Oracle connections/schemas explorer" })
 
-vim.api.nvim_create_user_command("OraAddConnection", function(opts)
-  -- Accept optional "name url" as a single arg string, or drop into UI
-  local args = vim.trim(opts.args)
-  if args ~= "" then
-    -- Split on the first space: first token = name, rest = url
-    local name, url = args:match("^(%S+)%s+(.+)$")
-    if not name then
-      require("ora.notify").warn("ora", "Usage: :OraAddConnection [name url]")
-      return
-    end
-    require("ora").add_connection(name, url)
-  else
-    require("ora").add_connection()
-  end
-end, {
-  nargs = "?",
-  desc  = "Add a new named connection to the SQLcl connection manager",
-})

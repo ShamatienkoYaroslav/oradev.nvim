@@ -16,7 +16,7 @@
 [+] Add indexes
 [+] Use dbms_metadata to fetch the plsql code and skip formatting
 [ ] Add formatting command for worksheets
-[ ] Global search in packages, functions, procedures, triggers and types
+[ ] Global search in packages, functions, procedures, triggers, types, ORDS modules, ORDS templates, ORDS handlers, dbms_schemduler jobs and dbms_schemduler programs
 [+] Add icons to the worksheet list
 [ ] Add support for DBMS_SCHEDULER objects:
   [ ] Jobs (USER_SCHEDULER_JOBS)
@@ -34,3 +34,8 @@
 [+] Show triggers under tables
 [ ] Add AQs
 [ ] Add LSP for SQL and PL/SQL
+[+] Add command to close the explorer
+[ ] Add wallets support
+[ ] Add support for a password prompt
+[ ] Improve the Results UI
+[ ] Fix the bug when a user can't see type body's code

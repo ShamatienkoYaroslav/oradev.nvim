@@ -64,42 +64,37 @@ require("ora").setup({
     ["o"]    = "quick_open",
     ["O"]    = "quick_open_alt",
     ["a"]    = "show_actions",
-    ["A"]    = "add_connection",
   },
 })
 ```
 
 Named connections are managed through SQLcl's built-in connection manager (`connmgr`).
-Use `:OraAddConnection` to add them — no hardcoded credentials in your config.
+Use the connection picker (`a` key) to add them — no hardcoded credentials in your config.
 
 ### Connection URL formats
 
 nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 
-| Format                      | Example                                 |
-| --------------------------- | --------------------------------------- |
-| user/pass@host:port/service | `scott/tiger@localhost:1521/XEPDB1`     |
-| EZConnect                   | `scott/tiger@//myhost.example.com/orcl` |
-| TNS alias                   | `/@MY_TNS_ALIAS`                        |
-| Wallet (mTLS)               | `/@mydb_high?TNS_ADMIN=/path/to/wallet` |
-| Prompt password             | `scott@localhost:1521/XEPDB1`           |
+| Format                      | Example                             |
+| --------------------------- | ----------------------------------- |
+| user/pass@host:port/service | `scott/tiger@localhost:1521/XEPDB1` |
+| TNS alias                   | `/@MY_TNS_ALIAS`                    |
+| Prompt password             | `scott@localhost:1521/XEPDB1`       |
 
 ## Commands
 
 ### Connections
 
-| Command                        | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `:OraConnectionsList`          | List saved connections (from SQLcl connmgr) and connect |
-| `:OraConnect <url>`            | Connect directly with a connection string               |
-| `:OraAddConnection [name url]` | Add a new named connection to SQLcl connmgr             |
+| Command               | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `:OraConnectionsList` | List saved connections (from SQLcl connmgr) and connect |
+| `:OraConnect <url>`   | Connect directly with a connection string               |
 
 ### Worksheets
 
 | Command                         | Description                                                       |
 | ------------------------------- | ----------------------------------------------------------------- |
 | `:OraWorksheetNew`              | Create a new SQL worksheet buffer                                 |
-| `:OraWorksheetsList`            | List all open worksheets                                          |
 | `:OraWorksheetExecute`          | Execute the current worksheet and show results in a split         |
 | `:OraWorksheetFormat`           | Format the current worksheet SQL using SQLcl's built-in formatter |
 | `:OraWorksheetChangeConnection` | Change the connection for the current worksheet                   |
@@ -133,7 +128,6 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | `O`    | Quick open alt (see below)                                                 |
 | `a`    | Show all actions (see below)                                               |
 | `r`    | Refresh: re-fetch children on the current node, or refresh connection list |
-| `A`    | Add a new named connection                                                 |
 
 ### Quick open with `o` / `O`
 
@@ -151,7 +145,7 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Function              | Show body          | —                    |
 | Procedure             | Show body          | —                    |
 | Package               | Show specification | Show body / Add body |
-| ORDS Module           | Define module      | Full export          |
+| ORDS Module           | Define module      | Export module        |
 | ORDS Template         | Define template    | —                    |
 | ORDS Handler          | Define handler     | Show source          |
 | ORDS Parameter        | Define parameter   | —                    |
@@ -161,7 +155,6 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Node type             | Actions                                                                   |
 | --------------------- | ------------------------------------------------------------------------- |
 | Connection            | Connect (if disconnected), Disconnect (if connected), Show conn. string   |
-| Package               | Show specification, Show body / Add body, Drop package, Drop package body |
 | Table                 | Show DDL, Show data, Drop table                                           |
 | View                  | Show DDL, Show data, Drop view                                            |
 | Materialized View     | Show DDL, Show data, Drop materialized view                               |
@@ -170,9 +163,15 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Synonym               | Show DDL, Drop synonym                                                    |
 | Sequence              | Show DDL, Drop sequence                                                   |
 | Trigger               | Show DDL, Drop trigger                                                    |
-| Type                  | Show specification, Show body / Add body, Drop type, Drop type body       |
 | Function              | Show body, Drop function                                                  |
 | Procedure             | Show body, Drop procedure                                                 |
+| Package               | Show specification, Show body / Add body, Drop package, Drop package body |
+| Type                  | Show specification, Show body / Add body, Drop type, Drop type body       |
+| ORDS (category)       | Export schema                                                             |
+| ORDS Module           | Define module, Export module                                              |
+| ORDS Template         | Define template                                                           |
+| ORDS Handler          | Define handler                                                            |
+| ORDS Parameter        | Define parameter                                                          |
 
 Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
 
@@ -192,6 +191,7 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 | **Functions**              | Parameters (with data type), return type, body source                                                  |
 | **Procedures**             | Parameters (with data type), body source                                                               |
 | **Packages**               | Specification source, body source (shown only if exists), subprograms with parameters and return types |
+| **ORDS Modules**           | Templates, handlers, parameters; define/export worksheets for each level                               |
 
 ### Tree structure
 
@@ -206,26 +206,44 @@ CONNECTIONS
 │   │   │   │   ├── 󰌹 EMP_NAME_IDX
 │   │   │   │   └── 󰌆 EMP_PK
 │   │   │   └── ...
+│   │   ├── 󰉋 Views (2)
+│   │   │   ├── 󰗀 EMP_VIEW
+│   │   │   └── ...
 │   │   ├── 󰉋 Materialized Views (1)
 │   │   │   └── 󰡠 EMP_SUMMARY
 │   │   ├── 󰉋 Materialized View Logs (1)
 │   │   │   └── 󰩼 MLOG$_EMPLOYEES  EMPLOYEES
+│   │   ├── 󰉋 Indexes (2)
+│   │   │   ├── 󰌹 EMP_NAME_IDX  EMPLOYEES
+│   │   │   └── ...
+│   │   ├── 󰉋 Synonyms (1)
+│   │   │   └── 󰌷 EMP_SYN  HR.EMPLOYEES
+│   │   ├── 󰉋 Functions (2)
+│   │   │   ├── 󰊕 GET_SALARY  NUMBER
+│   │   │   │   └── 󰆧 P_EMP_ID  NUMBER
+│   │   │   └── ...
+│   │   ├── 󰉋 Procedures (1)
+│   │   │   └── 󰊕 UPDATE_SALARY
+│   │   ├── 󰉋 Packages (1)
+│   │   │   └── 󰏗 HR_PKG
+│   │   │       └── 󰊕 GET_EMPLOYEE  VARCHAR2
 │   │   ├── 󰉋 Triggers (2)
 │   │   │   ├── 󱐋 AUDIT_TRG  EMPLOYEES
 │   │   │   └── 󱐋 LOG_TRG    ORDERS
 │   │   ├── 󰉋 Types (1)
 │   │   │   └── 󰕳 ADDRESS_T  OBJECT
-│   │   ├── 󰉋 Functions (2)
-│   │   │   ├── 󰊕 GET_SALARY  NUMBER
-│   │   │   │   └── 󰆧 P_EMP_ID  NUMBER
-│   │   │   └── ...
-│   │   └── 󰉋 Packages (1)
-│   │       └── 󰏗 HR_PKG
-│   │           └── 󰊕 GET_EMPLOYEE  VARCHAR2
+│   │   ├── 󰉋 Sequences (1)
+│   │   │   └── 󰁍 EMP_SEQ  1000
+│   │   └── 󰉋 ORDS (1)
+│   │       └── 󰒍 hr_api  /hr/
+│   │           └── 󰒍 employees/
+│   │               └──  GET  queryCollection
 │   └── 󰆼 local-xe
 └──  prod
     └── 󰆼 main-db
 ```
+
+Each connection shows 13 categories: Tables, Views, Materialized Views, Materialized View Logs, Indexes, Synonyms, Functions, Procedures, Packages, Triggers, Types, Sequences, and ORDS.
 
 Connections organized in SQLcl connmgr folders are shown in a hierarchy. Connections without folders appear at the root level as before. The worksheet picker (`:OraWorksheetNew`) remains flat — no folders.
 
@@ -249,14 +267,8 @@ require("ora").list()
 -- Connect directly with a connection string
 require("ora").connect("scott/tiger@localhost:1521/XEPDB1")
 
--- Add a named connection to connmgr
-require("ora").add_connection("dev", "system/oracle@localhost:1521/FREEPDB1")
-
 -- Create a new SQL worksheet
 require("ora").new_worksheet()
-
--- List open worksheets
-require("ora").list_worksheets()
 
 -- Execute the current worksheet
 require("ora").execute_worksheet()

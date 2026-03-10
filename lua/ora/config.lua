@@ -1,10 +1,16 @@
 local M = {}
 
+---@class OraLspConfig
+---@field server_path? string   Path to plsql-lsp/dist/server.js (nil = disabled)
+---@field filetypes?   string[] File types to attach the LSP client to
+---@field enabled?     boolean  Set to false to disable LSP even if server_path is set
+
 ---@class OraConfig
 ---@field sqlcl_path          string                   Path to the sqlcl executable
 ---@field win_width           integer                  Width of the picker floating window (columns)
 ---@field win_height          integer                  Height of the picker floating window (rows)
 ---@field explorer_mappings   table<string, string>    Key → command mappings for the schema explorer
+---@field lsp?                OraLspConfig             PL/SQL LSP configuration
 
 ---@type OraConfig
 local defaults = {
@@ -19,7 +25,10 @@ local defaults = {
     ["o"]    = "quick_open",
     ["O"]    = "quick_open_alt",
     ["a"]    = "show_actions",
-    ["A"]    = "add_connection",
+  },
+  lsp = {
+    server_path = nil,
+    filetypes   = { "plsql", "sql" },
   },
 }
 

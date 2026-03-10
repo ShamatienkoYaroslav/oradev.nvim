@@ -38,7 +38,8 @@ function M.open(opts)
   table.insert(items, Menu.item(" Connect with connection string…", { kind = "action_string" }))
 
   local cfg = require("ora.config").values
-  local menu = Menu({
+  local menu
+  menu = Menu({
     relative = "editor",
     position = "50%",
     size     = { width = cfg.win_width, height = math.min(cfg.win_height, #items) },
