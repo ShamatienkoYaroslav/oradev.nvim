@@ -36,6 +36,8 @@ local icons = {
   ords_template    = { text = "󰅩 ", hl = "String" },
   ords_handler     = { text = "󰌑 ", hl = "Function" },
   ords_parameter   = { text = "󰆧 ", hl = "Identifier" },
+  scheduler_job     = { text = "󰃰 ", hl = "DiagnosticInfo" },
+  scheduler_program = { text = "󰐱 ", hl = "DiagnosticHint" },
 }
 
 M.icon = function(config, node, state)
@@ -126,6 +128,10 @@ M.name = function(config, node, state)
     highlight = highlights.FILE_NAME
   elseif node.type == "ords_parameter" then
     highlight = highlights.FILE_NAME
+  elseif node.type == "scheduler_job" then
+    highlight = highlights.FILE_NAME
+  elseif node.type == "scheduler_program" then
+    highlight = highlights.FILE_NAME
   end
 
   return {
@@ -150,6 +156,10 @@ M.comment = function(config, node, state)
     cmt = node.extra and node.extra.typecode
   elseif node.type == "mview_log" then
     cmt = node.extra and node.extra.master
+  elseif node.type == "scheduler_job" then
+    cmt = node.extra and node.extra.state
+  elseif node.type == "scheduler_program" then
+    cmt = node.extra and node.extra.enabled
   end
   if not cmt or cmt == "" then return { text = "" } end
   return { text = " " .. cmt, highlight = highlights.DIM_TEXT }
@@ -163,6 +173,10 @@ M.return_type = function(config, node, state)
     rt = node.extra and node.extra.data_type
   elseif node.type == "ords_parameter" then
     rt = node.extra and node.extra.param_type
+  elseif node.type == "scheduler_job" then
+    rt = node.extra and node.extra.job_type
+  elseif node.type == "scheduler_program" then
+    rt = node.extra and node.extra.program_type
   end
   if not rt or rt == "" then return { text = "" } end
   vim.api.nvim_set_hl(0, "OraReturnType", { italic = true, link = "Comment", default = true })

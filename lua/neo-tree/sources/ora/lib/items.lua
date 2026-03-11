@@ -202,6 +202,14 @@ function M.make_category_stubs(conn_name)
       extra    = { category = "sequences", conn_name = conn_name, loaded = false },
     },
     {
+      id       = "cat:" .. conn_name .. ":DBMS Scheduler",
+      name     = "DBMS Scheduler",
+      type     = "category",
+      path     = conn_name .. "/DBMS Scheduler",
+      children = {},
+      extra    = { category = "dbms_scheduler", conn_name = conn_name, loaded = false },
+    },
+    {
       id       = "cat:" .. conn_name .. ":ORDS",
       name     = "ORDS",
       type     = "category",
@@ -624,6 +632,83 @@ function M.make_type_children(conn_name, types)
         conn_name = conn_name,
         type_name = t.name,
         typecode  = t.typecode,
+      },
+    })
+  end
+  return children
+end
+
+---Build sub-category nodes for the DBMS Scheduler parent category.
+---@param conn_name string
+---@return table[]
+function M.make_dbms_scheduler_children(conn_name)
+  return {
+    {
+      id       = "cat:" .. conn_name .. ":Scheduler Jobs",
+      name     = "Jobs",
+      type     = "category",
+      path     = conn_name .. "/DBMS Scheduler/Jobs",
+      children = {},
+      extra    = { category = "scheduler_jobs", conn_name = conn_name, loaded = false },
+    },
+    {
+      id       = "cat:" .. conn_name .. ":Scheduler Programs",
+      name     = "Programs",
+      type     = "category",
+      path     = conn_name .. "/DBMS Scheduler/Programs",
+      children = {},
+      extra    = { category = "scheduler_programs", conn_name = conn_name, loaded = false },
+    },
+  }
+end
+
+---Build child nodes for scheduler jobs.
+---@param conn_name string
+---@param jobs      {name: string, job_type: string, state: string, enabled: string}[]
+---@return table[]
+function M.make_scheduler_job_children(conn_name, jobs)
+  local children = {}
+  for _, job in ipairs(jobs) do
+    table.insert(children, {
+      id       = "sjob:" .. conn_name .. ":" .. job.name,
+      name     = job.name,
+      type     = "scheduler_job",
+      path     = conn_name .. "/DBMS Scheduler/Jobs/" .. job.name,
+      children = {},
+      extra    = {
+        conn_name = conn_name,
+        job_name  = job.name,
+        job_type  = job.job_type,
+        state     = job.state,
+        enabled   = job.enabled,
+        loaded    = false,
+      },
+    })
+  end
+  return children
+end
+
+---Build child nodes for scheduler programs.
+---@param conn_name string
+---@param programs  {name: string, program_type: string, enabled: string, number_of_arguments: string}[]
+---@return table[]
+function M.make_scheduler_program_children(conn_name, programs)
+  local children = {}
+  for _, prog in ipairs(programs) do
+    local enabled_str = prog.enabled == "TRUE" and "ENABLED" or "DISABLED"
+    table.insert(children, {
+      id       = "sprog:" .. conn_name .. ":" .. prog.name,
+      name     = prog.name,
+      type     = "scheduler_program",
+      path     = conn_name .. "/DBMS Scheduler/Programs/" .. prog.name,
+      children = {},
+      extra    = {
+        conn_name           = conn_name,
+        program_name        = prog.name,
+        program_type        = prog.program_type,
+        enabled             = enabled_str,
+        number_of_arguments = prog.number_of_arguments,
+        loaded              = false,
       },
     })
   end

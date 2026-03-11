@@ -22,6 +22,8 @@ local icons = {
   ["ORDS MODULE"]     = "󰒍 ",
   ["ORDS TEMPLATE"]   = "󰒍 ",
   ["ORDS HANDLER"]    = "󰒍 ",
+  ["SCHEDULER JOB"]   = "󰃰 ",
+  ["SCHEDULER PROGRAM"] = "󰐱 ",
 }
 
 local icon_hls = {
@@ -41,6 +43,8 @@ local icon_hls = {
   ["ORDS MODULE"]     = "OraIconOrds",
   ["ORDS TEMPLATE"]   = "OraIconOrds",
   ["ORDS HANDLER"]    = "OraIconOrds",
+  ["SCHEDULER JOB"]   = "DiagnosticInfo",
+  ["SCHEDULER PROGRAM"] = "DiagnosticHint",
 }
 
 local actions_by_type = {
@@ -60,6 +64,8 @@ local actions_by_type = {
   ["ORDS MODULE"]     = { "Show DDL", "Define Module" },
   ["ORDS TEMPLATE"]   = { "Define Template" },
   ["ORDS HANDLER"]    = { "Define Handler", "Show source" },
+  ["SCHEDULER JOB"]   = { "Show DDL", "Drop" },
+  ["SCHEDULER PROGRAM"] = { "Show DDL", "Drop" },
 }
 
 ---DBMS_METADATA type names (uses underscores, not spaces).
@@ -77,6 +83,8 @@ local metadata_types = {
   PROCEDURE        = "PROCEDURE",
   PACKAGE          = "PACKAGE",
   ["PACKAGE BODY"] = "PACKAGE_BODY",
+  ["SCHEDULER JOB"] = "PROCOBJ",
+  ["SCHEDULER PROGRAM"] = "PROCOBJ",
 }
 
 ---Strip trailing whitespace, split embedded newlines, return flat list.
@@ -511,13 +519,20 @@ function M.open()
 
     local s = require("ora.schema")
     local results = {}
-    local pending = 4
+    local pending = 5
 
     local function on_done()
       pending = pending - 1
       if pending > 0 then return end
 
       local objects = results.objects or {}
+
+      for _, job in ipairs(results.scheduler_jobs or {}) do
+        table.insert(objects, {
+          name        = job.name,
+          object_type = "SCHEDULER JOB",
+        })
+      end
 
       for _, m in ipairs(results.modules or {}) do
         table.insert(objects, {
@@ -584,6 +599,12 @@ function M.open()
     s.fetch_all_ords_handlers(conn, function(handlers, err)
       if err then notify.error("ora", err) end
       results.handlers = handlers or {}
+      on_done()
+    end)
+
+    s.fetch_scheduler_jobs(conn, function(jobs, err)
+      if err then notify.error("ora", err) end
+      results.scheduler_jobs = jobs or {}
       on_done()
     end)
   end)

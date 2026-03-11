@@ -164,6 +164,20 @@ local default_renderers = {
     { "name" },
     { "return_type" },
   },
+  scheduler_job = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "return_type" },
+    { "comment" },
+  },
+  scheduler_program = {
+    { "indent" },
+    { "icon" },
+    { "name" },
+    { "return_type" },
+    { "comment" },
+  },
 }
 
 ---Navigate to the given path and populate the tree.

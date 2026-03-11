@@ -83,6 +83,8 @@ Uses `plenary.Job:start()` for async queries. Functions include:
 - `fetch_mview_logs` — `user_mview_logs` (multi-column: name, master)
 - `fetch_type_has_body` — checks for `TYPE BODY` in `user_objects`
 - `fetch_types` — `user_types` (multi-column: name, typecode)
+- `fetch_scheduler_jobs` — `user_scheduler_jobs` (multi-column: name, job_type, state, enabled)
+- `fetch_scheduler_programs` — `user_scheduler_programs` (multi-column: name, program_type, enabled, number_of_arguments)
 - `fetch_source` — `user_source` (package spec/body, function/procedure body)
 - `fetch_ddl` — `DBMS_METADATA.GET_DDL`
 - `fetch_objects_by_pattern` — `user_objects` filtered by LIKE pattern (multi-column: name, object_type)
@@ -105,7 +107,7 @@ source plugin pattern:
 
 `lua/neo-tree/sources/ora/init.lua` — source entry point with `navigate()` and
 `setup()`. Defines `default_renderers` for all custom node types (connection,
-category, table, column, index, constraint, schema_index, synonym, trigger, mview, mview_log, ora_type, function, procedure, package,
+category, table, column, index, constraint, schema_index, synonym, trigger, mview, mview_log, ora_type, scheduler_job, scheduler_program, function, procedure, package,
 package_part, subprogram, parameter, table_action, source_action, message).
 Renderers are injected into `state.renderers` during navigate.
 
@@ -131,6 +133,10 @@ Internal handlers:
 - `_open_index_ddl` — fetches index DDL via DBMS_METADATA, creates worksheet
 - `_open_synonym_ddl` — fetches synonym DDL via DBMS_METADATA, creates worksheet
 - `_open_sequence_ddl` — fetches sequence DDL via DBMS_METADATA, creates worksheet
+- `_toggle_scheduler_job` — creates DDL action child for scheduler job node
+- `_open_scheduler_job_ddl` — fetches scheduler job DDL via DBMS_METADATA (PROCOBJ), creates worksheet
+- `_toggle_scheduler_program` — creates DDL action child for scheduler program node
+- `_open_scheduler_program_ddl` — fetches scheduler program DDL via DBMS_METADATA (PROCOBJ), creates worksheet
 - `_toggle_ords_module` — fetches templates by module_id
 - `_toggle_ords_template` — fetches handlers by template_id
 - `_toggle_ords_handler` — fetches parameters by handler_id
@@ -163,7 +169,7 @@ in `state.ora_children`. Builder functions: `make_table_children`,
 `make_column_children`, `make_index_children`, `make_constraint_children`,
 `make_function_children`, `make_procedure_children`, `make_package_children`,
 `make_subprogram_children`, `make_parameter_children`, `make_object_parameter_children`,
-`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_type_children`, `make_mview_children`, `make_mview_log_children`, `make_ords_module_children`, `make_ords_template_children`,
+`make_schema_index_children`, `make_synonym_children`, `make_sequence_children`, `make_trigger_children`, `make_type_children`, `make_dbms_scheduler_children`, `make_scheduler_job_children`, `make_scheduler_program_children`, `make_mview_children`, `make_mview_log_children`, `make_ords_module_children`, `make_ords_template_children`,
 `make_ords_handler_children`, `make_ords_parameter_children`.
 
 ### Neo-tree state
@@ -189,6 +195,8 @@ The explorer stores state on the neo-tree state object:
 - `mview` — `{conn_name, mview_name, comment?, loaded}`
 - `mview_log` — `{conn_name, log_table, master}`
 - `ora_type` — `{conn_name, type_name, typecode, has_body, loaded}`
+- `scheduler_job` — `{conn_name, job_name, job_type, state, enabled, loaded}`
+- `scheduler_program` — `{conn_name, program_name, program_type, enabled, number_of_arguments, loaded}`
 - `function` — `{conn_name, object_name, return_type, loaded}`
 - `procedure` — `{conn_name, object_name, loaded}`
 - `package` — `{conn_name, pkg_name, loaded}`

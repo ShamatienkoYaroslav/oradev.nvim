@@ -1749,4 +1749,58 @@ function M.fetch_types(conn, callback)
     end)
 end
 
+---Fetch scheduler jobs from user_scheduler_jobs.
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(jobs: {name: string, job_type: string, state: string, enabled: string}[]|nil, err: string|nil)
+function M.fetch_scheduler_jobs(conn, callback)
+  run_multi_query(conn,
+    "SELECT job_name, job_type, state, enabled FROM user_scheduler_jobs ORDER BY job_name",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local jobs = {}
+      for _, item in ipairs(items or {}) do
+        local name    = item.JOB_NAME  or item.job_name
+        local jtype   = item.JOB_TYPE  or item.job_type
+        local jstate  = item.STATE     or item.state
+        local enabled = item.ENABLED   or item.enabled
+        if name and name ~= vim.NIL then
+          table.insert(jobs, {
+            name     = tostring(name),
+            job_type = (jtype and jtype ~= vim.NIL) and tostring(jtype) or "",
+            state    = (jstate and jstate ~= vim.NIL) and tostring(jstate) or "",
+            enabled  = (enabled and enabled ~= vim.NIL) and tostring(enabled) or "",
+          })
+        end
+      end
+      callback(jobs, nil)
+    end)
+end
+
+---Fetch scheduler programs from user_scheduler_programs.
+---@param conn     {key: string, is_named: boolean}
+---@param callback fun(programs: {name: string, program_type: string, enabled: string, number_of_arguments: string}[]|nil, err: string|nil)
+function M.fetch_scheduler_programs(conn, callback)
+  run_multi_query(conn,
+    "SELECT program_name, program_type, enabled, number_of_arguments FROM user_scheduler_programs ORDER BY program_name",
+    function(items, err)
+      if err then callback(nil, err); return end
+      local programs = {}
+      for _, item in ipairs(items or {}) do
+        local name    = item.PROGRAM_NAME          or item.program_name
+        local ptype   = item.PROGRAM_TYPE           or item.program_type
+        local enabled = item.ENABLED                or item.enabled
+        local nargs   = item.NUMBER_OF_ARGUMENTS    or item.number_of_arguments
+        if name and name ~= vim.NIL then
+          table.insert(programs, {
+            name                = tostring(name),
+            program_type        = (ptype and ptype ~= vim.NIL) and tostring(ptype) or "",
+            enabled             = (enabled and enabled ~= vim.NIL) and tostring(enabled) or "FALSE",
+            number_of_arguments = (nargs and nargs ~= vim.NIL) and tostring(nargs) or "0",
+          })
+        end
+      end
+      callback(programs, nil)
+    end)
+end
+
 return M

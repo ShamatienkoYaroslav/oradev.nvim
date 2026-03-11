@@ -165,6 +165,10 @@ M.toggle_node = function(state)
     M._toggle_type(state, node)
   elseif node.type == "subprogram" then
     M._toggle_subprogram(state, node)
+  elseif node.type == "scheduler_job" then
+    M._toggle_scheduler_job(state, node)
+  elseif node.type == "scheduler_program" then
+    M._toggle_scheduler_program(state, node)
   elseif node.type == "ords_module" then
     M._toggle_ords_module(state, node)
   elseif node.type == "ords_template" then
@@ -299,6 +303,17 @@ M._toggle_category = function(state, node)
   elseif category == "sequences" then
     fetch_fn = function(cb) schema.fetch_sequences(conn, cb) end
     build_fn = function(sequences) return items.make_sequence_children(conn_name, sequences) end
+  elseif category == "dbms_scheduler" then
+    -- Static sub-categories, no fetch needed
+    local children = items.make_dbms_scheduler_children(conn_name)
+    M._set_category_children(state, node, conn_name, children)
+    return
+  elseif category == "scheduler_jobs" then
+    fetch_fn = function(cb) schema.fetch_scheduler_jobs(conn, cb) end
+    build_fn = function(jobs) return items.make_scheduler_job_children(conn_name, jobs) end
+  elseif category == "scheduler_programs" then
+    fetch_fn = function(cb) schema.fetch_scheduler_programs(conn, cb) end
+    build_fn = function(programs) return items.make_scheduler_program_children(conn_name, programs) end
   elseif category == "ords" then
     fetch_fn = function(cb) schema.fetch_ords_modules(conn, cb) end
     build_fn = function(modules) return items.make_ords_module_children(conn_name, modules) end
@@ -1318,6 +1333,152 @@ M._toggle_subprogram = function(state, node)
   end)
 end
 
+---Expand/collapse a scheduler job node, creating DDL action child on first expand.
+M._toggle_scheduler_job = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  local conn_name = node.extra.conn_name
+  local job_name  = node.extra.job_name
+
+  local children = {
+    {
+      id       = "sjob_action:" .. conn_name .. ":" .. job_name .. ":ddl",
+      name     = "DDL",
+      type     = "source_action",
+      path     = conn_name .. "/DBMS Scheduler/Jobs/" .. job_name .. "/DDL",
+      children = {},
+      extra    = { conn_name = conn_name, object_name = job_name, object_type = "PROCOBJ" },
+    },
+  }
+
+  M._set_category_children(state, node, conn_name, children)
+end
+
+---Open the DDL of a scheduler job in a new worksheet.
+M._open_scheduler_job_ddl = function(state, node)
+  local conn_name = node.extra.conn_name
+  local job_name  = node.extra.job_name
+  local conn = { key = conn_name, is_named = true }
+
+  local nid = "ora_open"
+  notify.progress(nid, "Loading scheduler job DDL…")
+
+  local schema = require("ora.schema")
+  schema.fetch_object_ddl(conn, "PROCOBJ", job_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load scheduler job DDL")
+      notify.error("ora", err)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. job_name .. " (Scheduler Job DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = job_name .. "-ddl",
+      display_name = display,
+      icon         = "󰃰 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Scheduler job DDL loaded")
+  end)
+end
+
+---Expand/collapse a scheduler program node, adding DDL action child on first expand.
+M._toggle_scheduler_program = function(state, node)
+  if node:is_expanded() then
+    node:collapse()
+    renderer.redraw(state)
+    return
+  end
+
+  if node.extra.loaded then
+    node:expand()
+    renderer.redraw(state)
+    return
+  end
+
+  local conn_name    = node.extra.conn_name
+  local program_name = node.extra.program_name
+
+  local children = {
+    {
+      id       = "sprog_action:" .. conn_name .. ":" .. program_name .. ":ddl",
+      name     = "DDL",
+      type     = "source_action",
+      path     = conn_name .. "/DBMS Scheduler/Programs/" .. program_name .. "/DDL",
+      children = {},
+      extra    = { conn_name = conn_name, object_name = program_name, object_type = "PROCOBJ" },
+    },
+  }
+
+  M._set_category_children(state, node, conn_name, children)
+end
+
+---Fetch scheduler program DDL via DBMS_METADATA and open in a worksheet.
+M._open_scheduler_program_ddl = function(state, node)
+  local conn_name    = node.extra.conn_name
+  local program_name = node.extra.program_name
+  local conn = { key = conn_name, is_named = true }
+
+  local nid = "ora_open"
+  notify.progress(nid, "Loading scheduler program DDL…")
+
+  local schema = require("ora.schema")
+  schema.fetch_object_ddl(conn, "PROCOBJ", program_name, function(lines, err)
+    if err then
+      notify.error(nid, "Failed to load scheduler program DDL")
+      notify.error("ora", err)
+      return
+    end
+
+    local ws_mod  = require("ora.worksheet")
+    local ws_conn = { key = conn_name, label = conn_name, is_named = true }
+    local display = schema_name(state, conn_name) .. "." .. program_name .. " (Scheduler Program DDL)"
+    local ws = ws_mod.create({
+      connection   = ws_conn,
+      name         = program_name .. "-ddl",
+      display_name = display,
+      icon         = "󰐱 ",
+    })
+
+    local buf_lines = {}
+    for _, line in ipairs(lines or {}) do
+      line = line:gsub("%s+$", "")
+      for _, seg in ipairs(vim.split(line, "\n", { plain = true })) do
+        table.insert(buf_lines, seg)
+      end
+    end
+    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
+    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
+    open_ws_in_main(ws)
+    format_buffer(ws.bufnr)
+    notify.done(nid, "Scheduler program DDL loaded")
+  end)
+end
+
 ---Expand/collapse an ORDS module node, lazy-loading templates.
 M._toggle_ords_module = function(state, node)
   if node:is_expanded() then
@@ -2065,6 +2226,14 @@ M.expand_node = function(state)
     if not node:is_expanded() then
       M._toggle_subprogram(state, node)
     end
+  elseif node.type == "scheduler_job" then
+    if not node:is_expanded() then
+      M._toggle_scheduler_job(state, node)
+    end
+  elseif node.type == "scheduler_program" then
+    if not node:is_expanded() then
+      M._toggle_scheduler_program(state, node)
+    end
   elseif node.type == "ords_module" then
     if not node:is_expanded() then
       M._toggle_ords_module(state, node)
@@ -2242,6 +2411,10 @@ M.quick_open = function(state)
     M._open_type_source(state, fake)
   elseif node.type == "sequence" then
     M._open_sequence_ddl(state, node)
+  elseif node.type == "scheduler_job" then
+    M._open_scheduler_job_ddl(state, node)
+  elseif node.type == "scheduler_program" then
+    M._open_scheduler_program_ddl(state, node)
   elseif node.type == "ords_module" then
     M._open_ords_define_module(state, node)
   elseif node.type == "ords_template" then
@@ -2614,6 +2787,26 @@ M.show_actions = function(state)
         end)
       elseif choice == "Drop trigger" then
         open_drop_worksheet(state, conn_name, trigger_name, "TRIGGER")
+      end
+    end)
+  elseif node.type == "scheduler_job" then
+    local conn_name = node.extra.conn_name
+    local job_name  = node.extra.job_name
+    action_picker(job_name, { "Show DDL", "Drop job" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_scheduler_job_ddl(state, node)
+      elseif choice == "Drop job" then
+        open_drop_worksheet(state, conn_name, job_name, "PROCOBJ")
+      end
+    end)
+  elseif node.type == "scheduler_program" then
+    local conn_name    = node.extra.conn_name
+    local program_name = node.extra.program_name
+    action_picker(program_name, { "Show DDL", "Drop program" }, function(choice)
+      if choice == "Show DDL" then
+        M._open_scheduler_program_ddl(state, node)
+      elseif choice == "Drop program" then
+        open_drop_worksheet(state, conn_name, program_name, "PROCOBJ")
       end
     end)
   elseif node.type == "category" and node.extra.category == "ords" then

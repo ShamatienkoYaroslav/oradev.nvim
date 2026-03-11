@@ -145,6 +145,8 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Function              | Show body          | —                    |
 | Procedure             | Show body          | —                    |
 | Package               | Show specification | Show body / Add body |
+| Scheduler Job         | Show DDL           | —                    |
+| Scheduler Program     | Show DDL           | —                    |
 | ORDS Module           | Define module      | Export module        |
 | ORDS Template         | Define template    | —                    |
 | ORDS Handler          | Define handler     | Show source          |
@@ -163,6 +165,8 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | Synonym               | Show DDL, Drop synonym                                                    |
 | Sequence              | Show DDL, Drop sequence                                                   |
 | Trigger               | Show DDL, Drop trigger                                                    |
+| Scheduler Job         | Show DDL, Drop job                                                        |
+| Scheduler Program     | Show DDL, Drop program                                                    |
 | Function              | Show body, Drop function                                                  |
 | Procedure             | Show body, Drop procedure                                                 |
 | Package               | Show specification, Show body / Add body, Drop package, Drop package body |
@@ -187,6 +191,8 @@ Source code is opened in a new worksheet with the connection pre-set and the fil
 | **Synonyms**               | Target display (owner.name@dblink), DDL                                                                |
 | **Sequences**              | Last number, increment step, DDL                                                                       |
 | **Triggers**               | Table name, trigger type, source, DDL                                                                  |
+| **Scheduler Jobs**         | Job type, state, DDL                                                                                   |
+| **Scheduler Programs**     | Program type, enabled status, DDL                                                                      |
 | **Types**                  | Typecode (OBJECT/COLLECTION), specification source, body source (if exists), methods with return types |
 | **Functions**              | Parameters (with data type), return type, body source                                                  |
 | **Procedures**             | Parameters (with data type), body source                                                               |
@@ -234,6 +240,12 @@ CONNECTIONS
 │   │   │   └── 󰕳 ADDRESS_T  OBJECT
 │   │   ├── 󰉋 Sequences (1)
 │   │   │   └── 󰁍 EMP_SEQ  1000
+│   │   ├── 󰉋 DBMS Scheduler
+│   │   │   ├── 󰉋 Jobs (2)
+│   │   │   │   ├── 󰃰 DAILY_CLEANUP  PLSQL_BLOCK  SCHEDULED
+│   │   │   │   └── 󰃰 SYNC_JOB      STORED_PROCEDURE  RUNNING
+│   │   │   └── 󰉋 Programs (1)
+│   │   │       └── 󰐱 MY_PROGRAM  PLSQL_BLOCK  ENABLED
 │   │   └── 󰉋 ORDS (1)
 │   │       └── 󰒍 hr_api  /hr/
 │   │           └── 󰒍 employees/
@@ -243,7 +255,7 @@ CONNECTIONS
     └── 󰆼 main-db
 ```
 
-Each connection shows 13 categories: Tables, Views, Materialized Views, Materialized View Logs, Indexes, Synonyms, Functions, Procedures, Packages, Triggers, Types, Sequences, and ORDS.
+Each connection shows 14 categories: Tables, Views, Materialized Views, Materialized View Logs, Indexes, Synonyms, Functions, Procedures, Packages, Triggers, Types, Sequences, DBMS Scheduler (Jobs + Programs), and ORDS.
 
 Connections organized in SQLcl connmgr folders are shown in a hierarchy. Connections without folders appear at the root level as before. The worksheet picker (`:OraWorksheetNew`) remains flat — no folders.
 

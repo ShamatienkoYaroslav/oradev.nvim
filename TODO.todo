@@ -19,8 +19,9 @@
 [ ] Global search in packages, functions, procedures, triggers, types, ORDS modules, ORDS templates, ORDS handlers, dbms_schemduler jobs and dbms_schemduler programs
 [+] Add icons to the worksheet list
 [ ] Add support for DBMS_SCHEDULER objects:
-  [ ] Jobs (USER_SCHEDULER_JOBS)
-  [ ] Programs (USER_SCHEDULER_PROGRAMS)
+  [+] Jobs (USER_SCHEDULER_JOBS)
+    [ ] Logs: USER_SCHEDULER_JOB_LOG, USER_SCHEDULER_JOB_RUN_DETAILS
+  [+] Programs (USER_SCHEDULER_PROGRAMS)
   [ ] Schedules (USER_SCHEDULER_SCHEDULES)
   [ ] Chains, Chain Steps, Chain Rules (USER_SCHEDULER_CHAINS, \_CHAIN_STEPS, \_CHAIN_RULES)
   [ ] Job Classes (USER_SCHEDULER_JOB_CLASSES)
@@ -29,7 +30,6 @@
   [ ] Destinations
   [ ] File Watchers (USER_SCHEDULER_FILE_WATCHERS)
   [ ] Groups (USER_SCHEDULER_GROUPS, \_GROUP_MEMBERS)
-  [ ] Logs: USER_SCHEDULER_JOB_LOG, USER_SCHEDULER_JOB_RUN_DETAILS
 [ ] Add enable/disable to a trigger node
 [+] Show triggers under tables
 [ ] Add AQs
