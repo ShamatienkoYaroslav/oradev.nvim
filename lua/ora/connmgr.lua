@@ -78,13 +78,17 @@ function M.list_tree()
       goto continue
     end
 
-    -- Determine depth from position of the tree branch chars (├ └) or the name itself.
-    -- Each depth level is ~4 chars of indent in the tree output.
-    -- Find the position of ├ or └ (UTF-8: \xe2\x94\x9c or \xe2\x94\x94)
+    -- Determine depth from visual column of the tree branch chars (├ └).
+    -- Each depth level is 4 visual columns of indent in the tree output.
+    -- UTF-8 box-drawing chars (│ ├ └ ─) are 3 bytes but 1 visual column,
+    -- so adjust byte position to visual column before computing depth.
     local branch_pos = line:find("\xe2\x94\x9c") or line:find("\xe2\x94\x94")
     local depth
     if branch_pos then
-      depth = math.floor((branch_pos - 1) / 4)
+      local prefix = line:sub(1, branch_pos - 1)
+      local _, box_count = prefix:gsub("\xe2\x94[\x80-\xbf]", "")
+      local visual_col = branch_pos - (box_count * 2)
+      depth = math.floor((visual_col - 1) / 4)
     else
       -- No tree chars — top-level flat name
       depth = 0

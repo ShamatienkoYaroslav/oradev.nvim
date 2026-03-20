@@ -23,11 +23,11 @@ function M.open(opts)
     for _, entry in ipairs(entries) do
       if entry.type == "folder" then
         local prefix = string.rep("  ", depth)
-        table.insert(items, Menu.separator(prefix .. " " .. entry.name))
+        table.insert(items, Menu.separator(prefix .. "󰉖 " .. entry.name))
         flatten(entry.children or {}, depth + 1)
       else
         local prefix = string.rep("  ", depth)
-        table.insert(items, Menu.item(prefix .. entry.name, { kind = "stored", url = entry.name }))
+        table.insert(items, Menu.item(prefix .. "󰆼 " .. entry.name, { kind = "stored", url = entry.name }))
       end
     end
   end
@@ -35,7 +35,7 @@ function M.open(opts)
   if #items > 0 then
     table.insert(items, Menu.separator())
   end
-  table.insert(items, Menu.item(" Connect with connection string…", { kind = "action_string" }))
+  table.insert(items, Menu.item("󰆼 Connect with connection string…", { kind = "action_string" }))
 
   local cfg = require("ora.config").values
   local menu

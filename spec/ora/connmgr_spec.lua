@@ -153,6 +153,50 @@ describe("ora.connmgr", function()
       }, tree)
     end)
 
+    it("handles deeply nested folders with vertical-bar continuation lines", function()
+      -- Real SQLcl output uses │ (3-byte UTF-8) for continuation lines
+      stub_job_sync(table.concat({
+        ".",
+        "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 env",
+        "\xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 dev",
+        "\xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 local-free",
+        "\xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 staging",
+        "\xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 staging-db",
+        "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 prod",
+        "    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 main-db",
+      }, "\n"))
+      local tree = fresh().list_tree()
+      assert.same({
+        {
+          name = "env",
+          type = "folder",
+          children = {
+            {
+              name = "dev",
+              type = "folder",
+              children = {
+                { name = "local-free", type = "connection" },
+              },
+            },
+            {
+              name = "staging",
+              type = "folder",
+              children = {
+                { name = "staging-db", type = "connection" },
+              },
+            },
+          },
+        },
+        {
+          name = "prod",
+          type = "folder",
+          children = {
+            { name = "main-db", type = "connection" },
+          },
+        },
+      }, tree)
+    end)
+
     it("returns empty list when output is empty", function()
       stub_job_sync("")
       assert.same({}, fresh().list_tree())

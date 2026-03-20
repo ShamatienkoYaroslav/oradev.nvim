@@ -1,7 +1,5 @@
 -- Quick Action: find schema objects by pattern and act on them.
--- Uses Snacks.picker for fuzzy object search, nui.menu for action selection.
-
-local Menu = require("nui.menu")
+-- Uses Snacks.picker for fuzzy object search.
 
 local M = {}
 
@@ -409,49 +407,6 @@ local function execute_action(conn_name, schema, object, action)
   end
 end
 
----Show the actions menu for a selected object.
----@param conn_name string
----@param schema string
----@param object {name: string, object_type: string}
-local function show_actions_menu(conn_name, schema, object)
-  local available = actions_by_type[object.object_type]
-  if not available then return end
-
-  local items = {}
-  for _, action in ipairs(available) do
-    table.insert(items, Menu.item(action, { action = action }))
-  end
-
-  local cfg = require("ora.config").values
-  local menu = Menu({
-    relative = "editor",
-    position = "50%",
-    size     = { width = cfg.win_width, height = math.min(cfg.win_height, #items) },
-    border   = {
-      style = "rounded",
-      text  = { top = " " .. object.name .. " ", top_align = "left" },
-    },
-    enter = true,
-  }, {
-    lines  = items,
-    keymap = {
-      focus_next = { "j", "<Down>" },
-      focus_prev = { "k", "<Up>" },
-      close      = {},
-      submit     = { "<CR>" },
-    },
-    on_close  = function() end,
-    on_submit = function(item)
-      execute_action(conn_name, schema, object, item.action)
-    end,
-  })
-
-  local function do_close() menu:unmount() end
-  menu:map("n", "q",     do_close, { noremap = true })
-  menu:map("n", "<Esc>", do_close, { noremap = true })
-  menu:mount()
-end
-
 ---Show the Snacks.picker for schema objects with fuzzy search.
 ---@param conn_name string
 ---@param schema string
@@ -495,9 +450,12 @@ local function show_picker(conn_name, schema, objects)
       confirm = function(picker, item)
         picker:close()
         if item and item.object then
-          vim.schedule(function()
-            show_actions_menu(conn_name, schema, item.object)
-          end)
+          local default = (actions_by_type[item.object.object_type] or {})[1]
+          if default then
+            vim.schedule(function()
+              execute_action(conn_name, schema, item.object, default)
+            end)
+          end
         end
       end,
     },
