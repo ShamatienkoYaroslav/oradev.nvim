@@ -104,7 +104,7 @@ local function clean_lines(raw_lines)
 end
 
 ---Create a worksheet, set its content, focus it, and format.
----@param opts { conn_name: string, schema_name: string, object_name: string, ws_suffix: string, display_suffix: string, icon: string, lines: string[] }
+---@param opts { conn_name: string, schema_name: string, object_name: string, ws_suffix: string, display_suffix: string, icon: string, lines: string[], kind: "soft"|"hard" }
 local function open_worksheet(opts)
   local ws_mod = require("ora.worksheet")
   local ws_conn = { key = opts.conn_name, label = opts.conn_name, is_named = true }
@@ -114,6 +114,7 @@ local function open_worksheet(opts)
     name         = opts.object_name .. "-" .. opts.ws_suffix,
     display_name = display,
     icon         = opts.icon,
+    db_object    = { name = opts.object_name, type = opts.display_suffix, schema = opts.schema_name, kind = opts.kind },
   })
 
   vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, opts.lines)
@@ -127,7 +128,7 @@ local function open_worksheet(opts)
 end
 
 ---Create a worksheet for ORDS content (no SCHEMA.NAME prefix in display).
----@param opts { conn_name: string, display: string, ws_name: string, lines: string[] }
+---@param opts { conn_name: string, display: string, ws_name: string, lines: string[], kind: "soft"|"hard" }
 local function open_ords_worksheet(opts)
   local ws_mod  = require("ora.worksheet")
   local ws_conn = { key = opts.conn_name, label = opts.conn_name, is_named = true }
@@ -174,6 +175,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = otype .. " DDL",
         icon           = icon,
         lines          = clean_lines(lines),
+        kind           = require("ora.worksheet").object_kind(otype),
       })
       notify.done(nid, "DDL loaded")
     end)
@@ -187,6 +189,7 @@ local function execute_action(conn_name, schema, object, action)
       display_suffix = otype .. " Data",
       icon           = icon,
       lines          = { "SELECT * FROM " .. object.name .. ";" },
+      kind           = "hard",
     })
 
   elseif action == "Show body" then
@@ -210,6 +213,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = suffix,
         icon           = icon,
         lines          = clean_lines(lines),
+        kind           = "soft",
       })
       notify.done(nid, "Source loaded")
     end)
@@ -230,6 +234,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = "Package Specification",
         icon           = icon,
         lines          = clean_lines(lines),
+        kind           = "soft",
       })
       notify.done(nid, "Source loaded")
     end)
@@ -247,6 +252,7 @@ local function execute_action(conn_name, schema, object, action)
         display   = schema .. " ORDS " .. object.name .. " (DDL)",
         ws_name   = "ords-ddl-" .. object.name,
         lines     = clean_lines(lines or {}),
+        kind      = "soft",
       })
       notify.done(nid, "Module DDL loaded")
     end)
@@ -263,6 +269,7 @@ local function execute_action(conn_name, schema, object, action)
         conn_name = conn_name,
         display   = schema .. " ORDS " .. d.name .. " (Define Module)",
         ws_name   = "ords-define-" .. d.name,
+        kind      = "soft",
         lines = {
           "BEGIN",
           "  ORDS.DEFINE_MODULE(",
@@ -292,6 +299,7 @@ local function execute_action(conn_name, schema, object, action)
         conn_name = conn_name,
         display   = schema .. " ORDS " .. d.module_name .. " " .. d.uri_template .. " (Define Template)",
         ws_name   = "ords-define-tpl-" .. d.module_name .. "-" .. d.uri_template,
+        kind      = "soft",
         lines = {
           "BEGIN",
           "  ORDS.DEFINE_TEMPLATE(",
@@ -347,6 +355,7 @@ local function execute_action(conn_name, schema, object, action)
         display   = schema .. " ORDS " .. d.module_name .. " " .. d.uri_template .. " " .. d.method .. " (Define Handler)",
         ws_name   = "ords-define-hdl-" .. d.module_name .. "-" .. d.method,
         lines     = lines,
+        kind      = "soft",
       })
       notify.done(nid, "Handler DDL loaded")
     end
@@ -377,6 +386,7 @@ local function execute_action(conn_name, schema, object, action)
         display   = schema .. " ORDS " .. object.module_name .. " " .. object.uri_template .. " " .. object.method .. " (Source)",
         ws_name   = "ords-src-" .. object.module_name .. "-" .. object.method,
         lines     = clean_lines(lines or {}),
+        kind      = "soft",
       })
       notify.done(nid, "Handler source loaded")
     end)
@@ -401,6 +411,7 @@ local function execute_action(conn_name, schema, object, action)
         display_suffix = "Drop " .. otype:lower(),
         icon           = "󰆴 ",
         lines          = clean_lines(lines),
+        kind           = "soft",
       })
       notify.done(nid, "DROP DDL loaded")
     end)

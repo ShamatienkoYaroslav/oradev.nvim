@@ -12,10 +12,17 @@ local M = {}
 ---@field lines     string[]
 ---@field timestamp string
 
+---@class OraDbObject
+---@field name        string          e.g. "EMPLOYEES"
+---@field type        string          e.g. "TABLE", "PACKAGE BODY", "FUNCTION"
+---@field schema      string|nil      Oracle schema/user name
+---@field kind        "soft"|"hard"   "soft" = compilable/executable; "hard" = DDL-only, read-only
+
 ---@class OraWorksheet
 ---@field bufnr          integer
 ---@field name           string
 ---@field connection     OraWorksheetConn|nil
+---@field db_object      OraDbObject|nil  set when opened for a specific DB object
 ---@field term_bufnr     integer|nil  dedicated terminal buffer for this worksheet
 ---@field result_bufnr   integer|nil  read-only result display buffer (created on demand)
 ---@field result_history OraResultEntry[]
@@ -60,7 +67,7 @@ function M.refresh_winbar(ws)
 end
 
 ---Create and register a new worksheet buffer.
----@param opts? { connection?: OraWorksheetConn, name?: string, display_name?: string, icon?: string }
+---@param opts? { connection?: OraWorksheetConn, name?: string, display_name?: string, icon?: string, db_object?: OraDbObject }
 ---@return OraWorksheet
 function M.create(opts)
   opts = opts or {}
@@ -82,6 +89,7 @@ function M.create(opts)
     display_name   = opts.display_name,
     icon           = opts.icon,
     connection     = opts.connection,
+    db_object      = opts.db_object,
     result_bufnr   = nil,
     result_history = {},
   }
@@ -97,6 +105,16 @@ function M.create(opts)
     once     = true,
     callback = function() M._remove(bufnr) end,
   })
+
+  -- Hard db_object worksheets are read-only (DDL for tables, indexes, etc.).
+  -- Defer so callers can set buffer content synchronously before the lock.
+  if opts.db_object and opts.db_object.kind == "hard" then
+    vim.schedule(function()
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+      end
+    end)
+  end
 
   return ws
 end
@@ -162,6 +180,26 @@ function M._remove(bufnr)
       return
     end
   end
+end
+
+-- ─── object kind helper ───────────────────────────────────────────────────────
+
+local SOFT_TYPES = {
+  VIEW             = true,
+  SYNONYM          = true,
+  ["FUNCTION"]     = true,
+  PROCEDURE        = true,
+  PACKAGE          = true,
+  ["PACKAGE BODY"] = true,
+  TYPE             = true,
+  ["TYPE BODY"]    = true,
+}
+
+---Determine the kind for a given Oracle object type.
+---@param object_type string
+---@return "soft"|"hard"
+function M.object_kind(object_type)
+  return SOFT_TYPES[object_type] and "soft" or "hard"
 end
 
 return M

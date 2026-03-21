@@ -86,6 +86,7 @@ local function open_drop_worksheet(state, conn_name, object_name, object_type)
       name         = object_name .. "-drop",
       display_name = display,
       icon         = "󰆴 ",
+      db_object    = { name = object_name, type = object_type, schema = schema_name(state, conn_name), kind = require("ora.worksheet").object_kind(object_type) },
     })
 
     local buf_lines = {}
@@ -598,6 +599,7 @@ M._open_mview_action = function(state, node)
       name         = mview_name .. "-data",
       display_name = display,
       icon         = "󰡠 ",
+      db_object    = { name = mview_name, type = "MATERIALIZED VIEW", schema = schema_name(state, conn_name), kind = "hard" },
     })
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. mview_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
@@ -620,6 +622,7 @@ M._open_mview_action = function(state, node)
         name         = mview_name .. "-ddl",
         display_name = display,
         icon         = "󰡠 ",
+        db_object    = { name = mview_name, type = "MATERIALIZED VIEW", schema = schema_name(state, conn_name), kind = "hard" },
       })
       local buf_lines = {}
       for _, line in ipairs(lines or {}) do
@@ -661,6 +664,7 @@ M._open_mview_log_ddl = function(state, node)
       name         = log_table .. "-ddl",
       display_name = display,
       icon         = "󰩼 ",
+      db_object    = { name = log_table, type = "MATERIALIZED VIEW LOG", schema = schema_name(state, conn_name), kind = "hard" },
     })
     local buf_lines = {}
     for _, line in ipairs(lines or {}) do
@@ -713,6 +717,7 @@ M._open_view_action = function(state, node)
         name         = view_name .. "-ddl",
         display_name = display,
         icon         = "󰡠 ",
+        db_object    = { name = view_name, type = "VIEW", schema = schema_name(state, conn_name), kind = "soft" },
       })
 
       local buf_lines = {}
@@ -735,6 +740,7 @@ M._open_view_action = function(state, node)
       name         = view_name .. "-data",
       display_name = display,
       icon         = "󰡠 ",
+      db_object    = { name = view_name, type = "VIEW", schema = schema_name(state, conn_name), kind = "soft" },
     })
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. view_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
@@ -802,6 +808,7 @@ M._open_table_action = function(state, node)
         name         = table_name .. "-ddl",
         display_name = display,
         icon         = "󰓫 ",
+        db_object    = { name = table_name, type = "TABLE", schema = schema_name(state, conn_name), kind = "hard" },
       })
 
       local buf_lines = {}
@@ -824,6 +831,7 @@ M._open_table_action = function(state, node)
       name         = table_name .. "-data",
       display_name = display,
       icon         = "󰓫 ",
+      db_object    = { name = table_name, type = "TABLE", schema = schema_name(state, conn_name), kind = "hard" },
     })
 
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. table_name .. ";" })
@@ -859,6 +867,7 @@ M._open_synonym_ddl = function(state, node)
       name         = synonym_name .. "-ddl",
       display_name = display,
       icon         = "󰔖 ",
+      db_object    = { name = synonym_name, type = "SYNONYM", schema = schema_name(state, conn_name), kind = "soft" },
     })
 
     local buf_lines = {}
@@ -902,6 +911,7 @@ M._open_sequence_ddl = function(state, node)
       name         = sequence_name .. "-ddl",
       display_name = display,
       icon         = "󰔚 ",
+      db_object    = { name = sequence_name, type = "SEQUENCE", schema = schema_name(state, conn_name), kind = "hard" },
     })
 
     local buf_lines = {}
@@ -945,6 +955,7 @@ M._open_index_ddl = function(state, node)
       name         = index_name .. "-ddl",
       display_name = display,
       icon         = "󰌹 ",
+      db_object    = { name = index_name, type = "INDEX", schema = schema_name(state, conn_name), kind = "hard" },
     })
 
     local buf_lines = {}
@@ -998,6 +1009,7 @@ M._open_package_source = function(state, node)
       name         = pkg_name .. "-" .. part,
       display_name = display,
       icon         = "󰏗 ",
+      db_object    = { name = pkg_name, type = part == "spec" and "PACKAGE" or "PACKAGE BODY", schema = schema_name(state, conn_name), kind = "soft" },
     })
 
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
@@ -1124,6 +1136,7 @@ M._open_type_source = function(state, node)
       name         = type_name .. "-" .. part,
       display_name = display,
       icon         = "󰕳 ",
+      db_object    = { name = type_name, type = part == "spec" and "TYPE" or "TYPE BODY", schema = schema_name(state, conn_name), kind = "soft" },
     })
 
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
@@ -1270,6 +1283,7 @@ M._open_object_source = function(state, node)
       name         = object_name .. "-body",
       display_name = display,
       icon         = icon,
+      db_object    = { name = object_name, type = object_type, schema = schema_name(state, conn_name), kind = require("ora.worksheet").object_kind(object_type) },
     })
 
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
@@ -1389,6 +1403,7 @@ M._open_scheduler_job_ddl = function(state, node)
       name         = job_name .. "-ddl",
       display_name = display,
       icon         = "󰃰 ",
+      db_object    = { name = job_name, type = "SCHEDULER JOB", schema = schema_name(state, conn_name), kind = "hard" },
     })
 
     local buf_lines = {}
@@ -1462,6 +1477,7 @@ M._open_scheduler_program_ddl = function(state, node)
       name         = program_name .. "-ddl",
       display_name = display,
       icon         = "󰐱 ",
+      db_object    = { name = program_name, type = "SCHEDULER PROGRAM", schema = schema_name(state, conn_name), kind = "hard" },
     })
 
     local buf_lines = {}
@@ -2465,6 +2481,7 @@ M.quick_open_alt = function(state)
         name         = pkg_name .. "-body",
         display_name = display,
         icon         = "󰏗 ",
+        db_object    = { name = pkg_name, type = "PACKAGE BODY", schema = schema_name(state, conn_name), kind = "soft" },
       })
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_ws_in_main(ws)
@@ -2486,6 +2503,7 @@ M.quick_open_alt = function(state)
         name         = type_name .. "-body",
         display_name = display,
         icon         = "󰕳 ",
+        db_object    = { name = type_name, type = "TYPE BODY", schema = schema_name(state, conn_name), kind = "soft" },
       })
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_ws_in_main(ws)
@@ -2601,6 +2619,7 @@ M.show_actions = function(state)
           name         = pkg_name .. "-body",
           display_name = display,
           icon         = "󰏗 ",
+          db_object    = { name = pkg_name, type = "PACKAGE BODY", schema = schema_name(state, conn_name), kind = "soft" },
         })
         vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
         open_ws_in_main(ws)
@@ -2738,6 +2757,7 @@ M.show_actions = function(state)
           name         = type_name .. "-body",
           display_name = display,
           icon         = "󰕳 ",
+          db_object    = { name = type_name, type = "TYPE BODY", schema = schema_name(state, conn_name), kind = "soft" },
         })
         vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
         open_ws_in_main(ws)
@@ -2771,6 +2791,7 @@ M.show_actions = function(state)
             name         = trigger_name .. "-ddl",
             display_name = display,
             icon         = "󱐋 ",
+            db_object    = { name = trigger_name, type = "TRIGGER", schema = schema_name(state, conn_name), kind = "hard" },
           })
           local buf_lines = {}
           for _, line in ipairs(lines or {}) do

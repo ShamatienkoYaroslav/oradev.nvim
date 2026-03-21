@@ -56,9 +56,19 @@ via `plenary.Job:sync()`.
 `register(bufnr)` adopts an existing buffer. Each worksheet has a winbar showing
 the worksheet/object name (left) and connection name (right).
 
-`lua/ora/result.lua` runs worksheet SQL via one-shot SQLcl jobs (JSON output),
-parses result sets, and formats them as column-aligned ASCII tables with highlights
-in a per-worksheet read-only split buffer.
+`lua/ora/result/init.lua` is the result **container**: manages the per-worksheet
+result buffer, the belowright split window, and a winbar showing the output type
+icon and label. It runs worksheet SQL via one-shot SQLcl jobs and delegates
+content rendering to output type modules. Key functions: `get_or_create_buf`,
+`set_buf_lines`, `display(bufnr, output)`, `show`, `run`, `push_history`.
+
+`lua/ora/result/output.lua` is the output type **registry**. Each output type
+registers a constructor via `output.register(type_name, constructor)`. New output
+types can be created with `output.create(type_name, data)`.
+
+`lua/ora/result/query.lua` is the **query** output type: parses JSON result sets
+from SQLcl, formats them as column-aligned ASCII tables with header highlighting
+and NULL cell markers. Constructor: `create({ raw = spool_content })`.
 
 `lua/ora/format.lua` formats worksheet SQL using SQLcl's `FORMAT FILE` command.
 Runs `/nolog` (no DB connection required).

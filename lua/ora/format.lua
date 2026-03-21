@@ -62,7 +62,10 @@ function M.run(bufnr, callback)
         end
 
         local new_lines = vim.split(formatted, "\n", { plain = true })
+        local was_modifiable = vim.api.nvim_buf_get_option(bufnr, "modifiable")
+        if not was_modifiable then vim.api.nvim_buf_set_option(bufnr, "modifiable", true) end
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+        if not was_modifiable then vim.api.nvim_buf_set_option(bufnr, "modifiable", false) end
         callback(nil)
       end)
     end,

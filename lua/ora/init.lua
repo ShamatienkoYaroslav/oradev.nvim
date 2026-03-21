@@ -132,6 +132,14 @@ function M.execute_worksheet()
   local ws_mod  = require("ora.worksheet")
   local ws      = ws_mod.find(bufnr) or ws_mod.register(bufnr)
 
+  -- Hard-object worksheets (TABLE DDL, INDEX DDL, etc.) are not executable.
+  if ws.db_object and ws.db_object.kind == "hard" then
+    notify.warn("ora", ws.db_object.type .. " worksheet is read-only and cannot be executed")
+    return
+  end
+
+  local is_soft = ws.db_object and ws.db_object.kind == "soft"
+
   local function do_run()
     local result = require("ora.result")
     local notify = require("ora.notify")
@@ -139,17 +147,43 @@ function M.execute_worksheet()
     local rbuf = result.get_or_create_buf(ws)
     result.set_buf_lines(rbuf, { "-- running…" })
     result.show(rbuf)
-    notify.progress(nid, "Executing query…")
-    result.run(ws, function(lines, hl_data, err)
+    notify.progress(nid, is_soft and "Compiling…" or "Executing query…")
+    result.run(ws, function(raw, err)
       if err then
-        result.set_buf_lines(rbuf, { "-- ERROR: " .. err })
-        notify.error(nid, "Query failed")
+        local error_output = require("ora.result.error")
+        local output = error_output.create({ raw = err })
+        result.display(rbuf, output)
+        notify.error(nid, is_soft and "Compilation failed" or "Query failed")
         return
       end
+
+      local output
+      if is_soft then
+        local compile_output = require("ora.result.compile")
+        output = compile_output.create({
+          raw         = raw,
+          object_name = ws.db_object.name,
+          object_type = ws.db_object.type,
+        })
+        if require("ora.result.error").is_error(raw) then
+          notify.error(nid, "Compilation failed")
+        else
+          notify.done(nid, "Compiled successfully")
+        end
+      else
+        local error_output = require("ora.result.error")
+        if error_output.is_error(raw) then
+          output = error_output.create({ raw = raw })
+          notify.error(nid, "Query failed")
+        else
+          output = require("ora.result.query").create({ raw = raw })
+          notify.done(nid, "Query complete")
+        end
+      end
+
       local sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
-      result.push_history(ws, sql, lines)
-      result.set_buf_content(rbuf, lines, hl_data)
-      notify.done(nid, "Query complete")
+      result.push_history(ws, sql, output.lines)
+      result.display(rbuf, output)
     end)
   end
 

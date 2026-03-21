@@ -1,11 +1,15 @@
--- Tests for ora.result.
+-- Tests for ora.result (container), ora.result.query, and ora.result.error.
 -- plenary.job is stubbed so no real sqlcl process is launched.
 
 local function fresh()
-  package.loaded["ora.result"] = nil
-  package.loaded["ora.config"] = nil
+  package.loaded["ora.result"]         = nil
+  package.loaded["ora.result.output"]  = nil
+  package.loaded["ora.result.query"]   = nil
+  package.loaded["ora.result.error"]   = nil
+  package.loaded["ora.result.compile"] = nil
+  package.loaded["ora.config"]         = nil
   -- Note: do NOT clear plenary.job here; stub_jobstart() sets it before tests run,
-  -- and result.lua requires plenary.job lazily inside run().
+  -- and result runs plenary.job lazily inside run().
   require("ora.config").setup({ sqlcl_path = "/usr/bin/sql" })
   return require("ora.result")
 end
@@ -147,6 +151,39 @@ describe("ora.result", function()
     end)
   end)
 
+  -- ─── display ──────────────────────────────────────────────────────────
+
+  describe("display()", function()
+    it("sets lines and applies render on the buffer", function()
+      local r = fresh()
+      local ws = make_ws()
+      local bufnr = r.get_or_create_buf(ws)
+      local query = require("ora.result.query")
+      local json = vim.fn.json_encode({
+        results = { {
+          columns = { { name = "X", type = "NUMBER" } },
+          items   = { { X = 1 } },
+        } },
+      })
+      local output = query.create({ raw = json })
+      r.display(bufnr, output)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local combined = table.concat(lines, "\n")
+      assert.matches("X", combined)
+      assert.matches("1", combined)
+    end)
+
+    it("buffer remains non-modifiable after display", function()
+      local r = fresh()
+      local ws = make_ws()
+      local bufnr = r.get_or_create_buf(ws)
+      local query = require("ora.result.query")
+      local output = query.create({ raw = vim.fn.json_encode({ results = {} }) })
+      r.display(bufnr, output)
+      assert.is_false(vim.api.nvim_buf_get_option(bufnr, "modifiable"))
+    end)
+  end)
+
   -- ─── push_history ───────────────────────────────────────────────────────
 
   describe("push_history()", function()
@@ -269,22 +306,22 @@ describe("ora.result", function()
     it("returns an error when the worksheet is empty", function()
       local ws = make_ws({ sql_lines = { "", "" } })
       local got_err
-      fresh().run(ws, function(_, _, err) got_err = err end)
+      fresh().run(ws, function(_, err) got_err = err end)
       assert.is_string(got_err)
       assert.matches("empty", got_err)
     end)
   end)
 
-  -- ─── run() — JSON parsing & table formatting ─────────────────────────────
+  -- ─── run() — raw spool delivery ──────────────────────────────────────────
 
-  describe("run() — result formatting", function()
+  describe("run() — spool delivery", function()
     local function run_with_spool(spool_content, sql_lines)
       local ctrl     = stub_jobstart()
       local ws       = make_ws({ sql_lines = sql_lines or { "SELECT 1 FROM dual;" } })
-      local got_lines, got_err
-      fresh().run(ws, function(lines, hl_data, err)
-        got_lines = lines
-        got_err   = err
+      local got_raw, got_err
+      fresh().run(ws, function(raw, err)
+        got_raw = raw
+        got_err = err
       end)
 
       -- Find the spool path from the script and write our fake content
@@ -301,102 +338,25 @@ describe("ora.result", function()
       ctrl.fire_exit(0)
 
       -- on_exit uses vim.schedule; run the event loop tick
-      vim.wait(100, function() return got_lines ~= nil or got_err ~= nil end)
-      return got_lines, got_err
+      vim.wait(100, function() return got_raw ~= nil or got_err ~= nil end)
+      return got_raw, got_err
     end
 
-    it("formats a single-column result as a table", function()
+    it("delivers raw spool content to callback", function()
       local json = vim.fn.json_encode({
         results = { {
           columns = { { name = "ID", type = "NUMBER" } },
-          items   = { { ID = 1 }, { ID = 2 } },
+          items   = { { ID = 1 } },
         } },
       })
-      local lines = run_with_spool(json)
-      assert.is_table(lines)
-      -- header line contains column name; data lines contain values (no border chars)
-      local combined = table.concat(lines, "\n")
-      assert.matches("ID", combined)
-      assert.matches("1",  combined)
-      assert.matches("2",  combined)
-      -- no box-drawing borders
-      assert.is_falsy(combined:match("%+%-%-%-"))
-      assert.is_falsy(combined:match("|%s"))
-    end)
-
-    it("formats a multi-column result correctly", function()
-      local json = vim.fn.json_encode({
-        results = { {
-          columns = {
-            { name = "ID",   type = "NUMBER"   },
-            { name = "NAME", type = "VARCHAR2" },
-          },
-          items = { { ID = 1, NAME = "Alice" } },
-        } },
-      })
-      local lines = run_with_spool(json)
-      local combined = table.concat(lines, "\n")
-      assert.matches("ID", combined)
-      assert.matches("NAME", combined)
-      assert.matches("Alice", combined)
-    end)
-
-    it("returns '(no rows returned)' when items is empty", function()
-      local json = vim.fn.json_encode({
-        results = { {
-          columns = { { name = "ID", type = "NUMBER" } },
-          items   = {},
-        } },
-      })
-      local lines = run_with_spool(json)
-      assert.same({ "(no rows returned)" }, lines)
-    end)
-
-    it("reports row count at the end", function()
-      local json = vim.fn.json_encode({
-        results = { {
-          columns = { { name = "X", type = "NUMBER" } },
-          items   = { { X = 1 }, { X = 2 }, { X = 3 } },
-        } },
-      })
-      local lines = run_with_spool(json)
-      assert.equals("(3 rows)", lines[#lines])
-    end)
-
-    it("reports singular 'row' for a single result", function()
-      local json = vim.fn.json_encode({
-        results = { {
-          columns = { { name = "X", type = "NUMBER" } },
-          items   = { { X = 42 } },
-        } },
-      })
-      local lines = run_with_spool(json)
-      assert.equals("(1 row)", lines[#lines])
-    end)
-
-    it("returns a parse error message for invalid JSON", function()
-      local lines = run_with_spool("not json at all")
-      assert.is_table(lines)
-      local combined = table.concat(lines, "\n")
-      assert.matches("parse error", combined)
+      local raw = run_with_spool(json)
+      assert.is_string(raw)
+      assert.matches("ID", raw)
     end)
 
     it("returns an error when spool file is missing", function()
-      local _, err = run_with_spool(nil)  -- nil = don't write spool file
+      local _, err = run_with_spool(nil)
       assert.is_string(err)
-    end)
-
-    it("returns '(query returned no result set)' for empty results array", function()
-      local json = vim.fn.json_encode({ results = {} })
-      local lines = run_with_spool(json)
-      assert.same({ "(query returned no result set)" }, lines)
-    end)
-
-    it("NULL values rendered as 'NULL'", function()
-      local json = '{"results":[{"columns":[{"name":"V","type":"VARCHAR2"}],"items":[{"V":null}]}]}'
-      local lines = run_with_spool(json)
-      local combined = table.concat(lines, "\n")
-      assert.matches("NULL", combined)
     end)
   end)
 
@@ -430,6 +390,489 @@ describe("ora.result", function()
       vim.cmd("new")
       r.show(bufnr)
       assert.equals(win1, vim.api.nvim_get_current_win())
+    end)
+  end)
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+
+describe("ora.result.query", function()
+  before_each(function()
+    package.loaded["ora.result"]        = nil
+    package.loaded["ora.result.output"] = nil
+    package.loaded["ora.result.query"]  = nil
+  end)
+
+  local function make_output(json)
+    local query = require("ora.result.query")
+    return query.create({ raw = json })
+  end
+
+  it("formats a single-column bordered table", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "ID", type = "NUMBER" } },
+        items   = { { ID = 1 }, { ID = 2 } },
+      } },
+    })
+    local output = make_output(json)
+    -- Bordered table: top border, header, separator, data rows, bottom border, footer
+    assert.is_true(#output.lines >= 6)
+    -- Top border uses box-drawing
+    assert.matches("┌", output.lines[1])
+    assert.matches("┐", output.lines[1])
+    -- Header contains column name between │ separators
+    assert.matches("│", output.lines[2])
+    assert.matches("ID", output.lines[2])
+    -- Separator
+    assert.matches("├", output.lines[3])
+    -- Data rows contain values between │ separators
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("1", combined)
+    assert.matches("2", combined)
+    -- Bottom border
+    assert.matches("└", output.lines[#output.lines - 1])
+  end)
+
+  it("formats a multi-column bordered table", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = {
+          { name = "ID",   type = "NUMBER"   },
+          { name = "NAME", type = "VARCHAR2" },
+        },
+        items = { { ID = 1, NAME = "Alice" } },
+      } },
+    })
+    local output = make_output(json)
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("ID", combined)
+    assert.matches("NAME", combined)
+    assert.matches("Alice", combined)
+    -- Multi-column: borders use ┬ and ┼
+    assert.matches("┬", output.lines[1])
+    assert.matches("┼", output.lines[3])
+  end)
+
+  it("column widths match content", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = {
+          { name = "ID",   type = "NUMBER" },
+          { name = "LONGNAME", type = "VARCHAR2" },
+        },
+        items = {
+          { ID = 1, LONGNAME = "short" },
+          { ID = 2, LONGNAME = "a longer value" },
+        },
+      } },
+    })
+    local output = make_output(json)
+    -- The top border segment width = content width + 2 (padding).
+    -- "ID" col width = 2, so border = ──── (4 dashes). "LONGNAME" col or data max =
+    -- "a longer value" = 14, so border = 16 dashes.
+    -- Verify header cells are padded to match data:
+    -- the header row should have "ID" padded to same width as data "2"
+    -- and "LONGNAME" padded to same width as "a longer value"
+    local header = output.lines[2]
+    -- Both columns should appear in the header
+    assert.matches("ID", header)
+    assert.matches("LONGNAME", header)
+    -- Every data row and header row should have the same byte length
+    -- (they all use the same column widths)
+    local header_len = #output.lines[2]
+    for i = 4, #output.lines - 2 do  -- data rows (skip top, header, sep, bottom, footer)
+      assert.equals(header_len, #output.lines[i],
+        "data row " .. (i - 3) .. " length mismatch")
+    end
+    -- Border lines should also have the same visual width
+    -- (byte length differs because ─ is 3 bytes, but all border lines are same length)
+    assert.equals(#output.lines[1], #output.lines[3])  -- top == separator
+    assert.equals(#output.lines[1], #output.lines[#output.lines - 1])  -- top == bottom
+  end)
+
+  it("returns '(no rows returned)' when items is empty", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "ID", type = "NUMBER" } },
+        items   = {},
+      } },
+    })
+    local output = make_output(json)
+    assert.same({ "(no rows returned)" }, output.lines)
+  end)
+
+  it("reports row count in footer", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "X", type = "NUMBER" } },
+        items   = { { X = 1 }, { X = 2 }, { X = 3 } },
+      } },
+    })
+    local output = make_output(json)
+    assert.matches("3 rows", output.lines[#output.lines])
+  end)
+
+  it("reports singular 'row' for a single result", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "X", type = "NUMBER" } },
+        items   = { { X = 42 } },
+      } },
+    })
+    local output = make_output(json)
+    assert.matches("1 row$", output.lines[#output.lines])
+  end)
+
+  it("returns a fallback message for invalid JSON", function()
+    local output = make_output("not json at all")
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("not a query result", combined)
+  end)
+
+  it("returns '(query returned no result set)' for empty results array", function()
+    local json = vim.fn.json_encode({ results = {} })
+    local output = make_output(json)
+    assert.same({ "(query returned no result set)" }, output.lines)
+  end)
+
+  it("NULL values rendered as 'NULL'", function()
+    local json = '{"results":[{"columns":[{"name":"V","type":"VARCHAR2"}],"items":[{"V":null}]}]}'
+    local output = make_output(json)
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("NULL", combined)
+  end)
+
+  it("has type, label, icon, and render fields", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "X", type = "NUMBER" } },
+        items   = { { X = 1 } },
+      } },
+    })
+    local output = make_output(json)
+    assert.equals("query", output.type)
+    assert.equals("Query Result", output.label)
+    assert.is_string(output.icon)
+    assert.is_string(output.icon_hl)
+    assert.is_function(output.render)
+  end)
+
+  it("render applies extmarks without error", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "X", type = "NUMBER" } },
+        items   = { { X = 1 } },
+      } },
+    })
+    local output = make_output(json)
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, output.lines)
+    assert.has_no_error(function()
+      output:render(bufnr)
+    end)
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
+  it("produces correct bordered structure for known input", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "X", type = "NUMBER" } },
+        items   = { { X = 42 } },
+      } },
+    })
+    local output = make_output(json)
+    -- Expected:
+    --   ┌────┐
+    --   │ X  │
+    --   ├────┤
+    --   │ 42 │
+    --   └────┘
+    --    1 row
+    assert.equals(6, #output.lines)
+    assert.equals("┌────┐", output.lines[1])
+    assert.equals("│ X  │", output.lines[2])
+    assert.equals("├────┤", output.lines[3])
+    assert.equals("│ 42 │", output.lines[4])
+    assert.equals("└────┘", output.lines[5])
+    assert.equals(" 1 row", output.lines[6])
+  end)
+
+  it("truncates CLOB values that exceed max column width", function()
+    local long_val = string.rep("A", 200)
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "DOC", type = "CLOB" } },
+        items   = { { DOC = long_val } },
+      } },
+    })
+    local output = make_output(json)
+    -- Data row should not contain the full 200-char value
+    local data_row = output.lines[4]  -- after top border, header, separator
+    assert.is_true(#data_row < 200 + 20)  -- much shorter than raw value + borders
+    -- Should end with truncation marker … somewhere in the row
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("…", combined)
+  end)
+
+  it("flattens newlines in CLOB values", function()
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "DOC", type = "CLOB" } },
+        items   = { { DOC = "line1\nline2\nline3" } },
+      } },
+    })
+    local output = make_output(json)
+    -- All output lines should be part of the table structure, not raw newlines
+    -- The value should appear flattened into a single data row
+    local data_row = output.lines[4]
+    assert.matches("line1 line2 line3", data_row)
+  end)
+
+  it("truncates any column type exceeding max width", function()
+    local long_val = string.rep("X", 200)
+    local json = vim.fn.json_encode({
+      results = { {
+        columns = { { name = "V", type = "VARCHAR2" } },
+        items   = { { V = long_val } },
+      } },
+    })
+    local output = make_output(json)
+    local combined = table.concat(output.lines, "\n")
+    assert.matches("…", combined)
+  end)
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+
+describe("ora.result.error", function()
+  before_each(function()
+    package.loaded["ora.result"]        = nil
+    package.loaded["ora.result.output"] = nil
+    package.loaded["ora.result.query"]  = nil
+    package.loaded["ora.result.error"]  = nil
+  end)
+
+  local function make_error(raw)
+    local err = require("ora.result.error")
+    return err.create({ raw = raw })
+  end
+
+  local function is_error(raw)
+    return require("ora.result.error").is_error(raw)
+  end
+
+  -- ─── is_error detection ─────────────────────────────────────────────────
+
+  describe("is_error()", function()
+    it("detects ORA error codes", function()
+      assert.is_true(is_error("ORA-00942: table or view does not exist"))
+    end)
+
+    it("detects SQL Error prefix", function()
+      assert.is_true(is_error("SQL Error: ORA-00942: table or view does not exist"))
+    end)
+
+    it("detects PLS error codes", function()
+      assert.is_true(is_error("PLS-00201: identifier must be declared"))
+    end)
+
+    it("detects SP2 error codes", function()
+      assert.is_true(is_error("SP2-0734: unknown command"))
+    end)
+
+    it("detects multi-line error with 'Error starting at line'", function()
+      local raw = table.concat({
+        "Error starting at line : 5 File @ /tmp/script.sql",
+        "In command -",
+        "select * from all_objects1",
+        "Error at Command Line : 5 Column : 15 File @ /tmp/script.sql",
+        "Error report -",
+        "SQL Error: ORA-00942: table or view does not exist",
+      }, "\n")
+      assert.is_true(is_error(raw))
+    end)
+
+    it("returns false for valid JSON query output", function()
+      local json = '{"results":[{"columns":[{"name":"X"}],"items":[{"X":1}]}]}'
+      assert.is_false(is_error(json))
+    end)
+
+    it("returns false for empty output", function()
+      assert.is_false(is_error(""))
+    end)
+  end)
+
+  -- ─── error parsing and formatting ───────────────────────────────────────
+
+  describe("create()", function()
+    it("extracts ORA error code and message", function()
+      local output = make_error("SQL Error: ORA-00942: table or view does not exist")
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("ORA%-00942", combined)
+      assert.matches("table or view does not exist", combined)
+    end)
+
+    it("extracts error from full SQLcl error output", function()
+      local raw = table.concat({
+        "Error starting at line : 5 File @ /tmp/nvim.root/aaVXH1/4.sql",
+        "In command -",
+        "select * from all_objects1",
+        "Error at Command Line : 5 Column : 15 File @ /tmp/nvim.root/aaVXH1/4.sql",
+        "Error report -",
+        "SQL Error: ORA-00942: table or view does not exist",
+        "",
+        "https://docs.oracle.com/error-help/db/ora-00942/",
+        "00942. 000",
+      }, "\n")
+      local output = make_error(raw)
+      local combined = table.concat(output.lines, "\n")
+      -- Shows the error code and message
+      assert.matches("ORA%-00942", combined)
+      assert.matches("table or view does not exist", combined)
+      -- Shows the URL
+      assert.matches("https://docs.oracle.com", combined)
+      -- Does NOT show noise lines
+      assert.is_falsy(combined:match("Error starting at line"))
+      assert.is_falsy(combined:match("Error at Command Line"))
+      assert.is_falsy(combined:match("In command"))
+      assert.is_falsy(combined:match("Error report"))
+      assert.is_falsy(combined:match("select %* from all_objects1"))
+      assert.is_falsy(combined:match("00942%. 000"))
+    end)
+
+    it("handles PLS errors", function()
+      local raw = "PLS-00201: identifier 'NONEXISTENT' must be declared"
+      local output = make_error(raw)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("PLS%-00201", combined)
+      assert.matches("identifier", combined)
+    end)
+
+    it("handles multiple errors", function()
+      local raw = table.concat({
+        "ORA-06550: line 2, column 3:",
+        "PLS-00201: identifier 'FOO' must be declared",
+      }, "\n")
+      local output = make_error(raw)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("ORA%-06550", combined)
+      assert.matches("PLS%-00201", combined)
+    end)
+
+    it("has error output type fields", function()
+      local output = make_error("ORA-00942: table or view does not exist")
+      assert.equals("error", output.type)
+      assert.equals("Error", output.label)
+      assert.is_string(output.icon)
+      assert.is_string(output.icon_hl)
+      assert.is_function(output.render)
+    end)
+
+    it("render applies extmarks without error", function()
+      local output = make_error("ORA-00942: table or view does not exist")
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, output.lines)
+      assert.has_no_error(function()
+        output:render(bufnr)
+      end)
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    it("produces output for unknown error text", function()
+      local output = make_error("something went wrong")
+      assert.is_true(#output.lines > 0)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("something went wrong", combined)
+    end)
+  end)
+
+  -- ─── compile output ─────────────────────────────────────────────────────
+
+  describe("compile", function()
+    local function make_compile(raw, opts)
+      fresh()
+      local compile = require("ora.result.compile")
+      opts = opts or {}
+      return compile.create({
+        raw         = raw,
+        object_name = opts.object_name or "MY_PKG",
+        object_type = opts.object_type or "PACKAGE BODY",
+      })
+    end
+
+    it("shows success for clean output", function()
+      local output = make_compile("")
+      assert.equals("compile", output.type)
+      assert.equals("Compiled", output.label)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("Compiled successfully", combined)
+      assert.matches("PACKAGE BODY MY_PKG", combined)
+    end)
+
+    it("delegates to error output on compilation failure", function()
+      local raw = "PLS-00103: Encountered the symbol \"END\""
+      local output = make_compile(raw)
+      assert.equals("Compilation Failed", output.label)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("PLS%-00103", combined)
+    end)
+
+    it("has correct output type fields for success", function()
+      local output = make_compile("")
+      assert.is_string(output.icon)
+      assert.is_string(output.icon_hl)
+      assert.equals("DiagnosticOk", output.icon_hl)
+    end)
+
+    it("render applies extmarks without error", function()
+      local output = make_compile("")
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, output.lines)
+      assert.has_no_error(function()
+        output:render(bufnr)
+      end)
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    it("includes object name and type in success output", function()
+      local output = make_compile("", { object_name = "CALC_SALARY", object_type = "FUNCTION" })
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("FUNCTION CALC_SALARY", combined)
+    end)
+  end)
+
+  -- ─── worksheet object_kind ──────────────────────────────────────────────
+
+  describe("worksheet.object_kind()", function()
+    local ws_mod
+    before_each(function()
+      package.loaded["ora.worksheet"] = nil
+      ws_mod = require("ora.worksheet")
+    end)
+
+    it("returns 'soft' for PACKAGE BODY", function()
+      assert.equals("soft", ws_mod.object_kind("PACKAGE BODY"))
+    end)
+
+    it("returns 'soft' for FUNCTION", function()
+      assert.equals("soft", ws_mod.object_kind("FUNCTION"))
+    end)
+
+    it("returns 'soft' for TYPE", function()
+      assert.equals("soft", ws_mod.object_kind("TYPE"))
+    end)
+
+    it("returns 'soft' for VIEW", function()
+      assert.equals("soft", ws_mod.object_kind("VIEW"))
+    end)
+
+    it("returns 'hard' for TABLE", function()
+      assert.equals("hard", ws_mod.object_kind("TABLE"))
+    end)
+
+    it("returns 'hard' for INDEX", function()
+      assert.equals("hard", ws_mod.object_kind("INDEX"))
     end)
   end)
 end)
