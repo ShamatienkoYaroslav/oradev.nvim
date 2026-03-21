@@ -93,13 +93,14 @@ end
 ---Calls `callback(raw, err)` with the raw spool content.
 ---@param ws       OraWorksheet
 ---@param callback fun(raw: string|nil, err: string|nil)
-function M.run(ws, callback)
+---@param override_sql? string  optional SQL to execute instead of the full buffer
+function M.run(ws, callback, override_sql)
   local conn = ws.connection
   local cfg  = require("ora.config").values
 
-  local sql = table.concat(
-    vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
-  sql = vim.trim(sql)
+  local sql = override_sql
+    and vim.trim(override_sql)
+    or vim.trim(table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n"))
   if sql == "" then
     callback(nil, "worksheet is empty")
     return

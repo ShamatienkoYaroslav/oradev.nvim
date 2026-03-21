@@ -199,6 +199,142 @@ function M.execute_worksheet()
   end
 end
 
+---Extract the SQL statement at the cursor position.
+---Statements are delimited by `;` or `/` on its own line.
+---@param bufnr integer
+---@return string
+local function sql_at_cursor(bufnr)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local cursor_row = vim.api.nvim_win_get_cursor(0)[1]  -- 1-based
+
+  -- Find statement boundaries: scan backwards for start, forwards for end.
+  -- A statement ends at a line ending with `;` or a line that is just `/`.
+  local function is_terminator(line)
+    local trimmed = vim.trim(line)
+    return trimmed:match(";%s*$") or trimmed == "/"
+  end
+
+  -- Find start: go backwards from cursor row until we hit a terminator (previous statement)
+  -- or beginning of buffer.
+  local start_row = 1
+  for r = cursor_row - 1, 1, -1 do
+    if is_terminator(lines[r]) then
+      start_row = r + 1
+      break
+    end
+  end
+
+  -- Skip blank lines at the start
+  while start_row < cursor_row and vim.trim(lines[start_row]) == "" do
+    start_row = start_row + 1
+  end
+
+  -- Find end: go forwards from cursor row until we hit a terminator or end of buffer.
+  local end_row = #lines
+  for r = cursor_row, #lines do
+    if is_terminator(lines[r]) then
+      end_row = r
+      break
+    end
+  end
+
+  local stmt_lines = {}
+  for r = start_row, end_row do
+    table.insert(stmt_lines, lines[r])
+  end
+  return table.concat(stmt_lines, "\n")
+end
+
+---Execute the selected SQL (visual selection) or the statement at cursor.
+---Only works for regular worksheets (not db_object worksheets).
+function M.execute_worksheet_selected()
+  if not _setup_done then
+    notify.error("ora", "call require('ora').setup({...}) first")
+    return
+  end
+
+  local bufnr   = vim.api.nvim_get_current_buf()
+  local ws_mod  = require("ora.worksheet")
+  local ws      = ws_mod.find(bufnr) or ws_mod.register(bufnr)
+
+  if ws.db_object then
+    notify.warn("ora", "Use OraWorksheetExecute to compile db object worksheets")
+    return
+  end
+
+  -- Extract SQL: visual selection or statement at cursor.
+  local mode = vim.fn.mode()
+  local sql
+  if mode == "v" or mode == "V" or mode == "\22" then
+    -- Visual mode: get selected lines
+    vim.cmd("normal! ")  -- exit visual to update '< and '> marks
+    local start_row = vim.fn.line("'<")
+    local end_row   = vim.fn.line("'>")
+    local sel_lines = vim.api.nvim_buf_get_lines(bufnr, start_row - 1, end_row, false)
+    if mode == "v" then
+      -- Character-wise: trim to selection columns
+      local start_col = vim.fn.col("'<")
+      local end_col   = vim.fn.col("'>")
+      if #sel_lines == 1 then
+        sel_lines[1] = sel_lines[1]:sub(start_col, end_col)
+      else
+        sel_lines[1] = sel_lines[1]:sub(start_col)
+        sel_lines[#sel_lines] = sel_lines[#sel_lines]:sub(1, end_col)
+      end
+    end
+    sql = table.concat(sel_lines, "\n")
+  else
+    sql = sql_at_cursor(bufnr)
+  end
+
+  sql = vim.trim(sql)
+  if sql == "" then
+    notify.warn("ora", "No SQL statement at cursor")
+    return
+  end
+
+  local function do_run()
+    local result = require("ora.result")
+    local notify = require("ora.notify")
+    local nid = "ora_exec"
+    local rbuf = result.get_or_create_buf(ws)
+    result.set_buf_lines(rbuf, { "-- running…" })
+    result.show(rbuf)
+    notify.progress(nid, "Executing query…")
+    result.run(ws, function(raw, err)
+      if err then
+        local error_output = require("ora.result.error")
+        local output = error_output.create({ raw = err })
+        result.display(rbuf, output)
+        notify.error(nid, "Query failed")
+        return
+      end
+      local error_output = require("ora.result.error")
+      local output
+      if error_output.is_error(raw) then
+        output = error_output.create({ raw = raw })
+        notify.error(nid, "Query failed")
+      else
+        output = require("ora.result.query").create({ raw = raw })
+        notify.done(nid, "Query complete")
+      end
+      result.push_history(ws, sql, output.lines)
+      result.display(rbuf, output)
+    end, sql)
+  end
+
+  if ws.connection then
+    do_run()
+  else
+    require("ora.ui.picker").select(function(conn)
+      if not conn then return end
+      ws.connection = conn
+      ws_mod.refresh_winbar(ws)
+      do_run()
+    end)
+  end
+end
+
 ---Format the current worksheet SQL using SQLcl's built-in formatter.
 function M.format_worksheet()
   if not _setup_done then
