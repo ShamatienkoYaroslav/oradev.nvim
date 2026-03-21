@@ -248,11 +248,11 @@ local function parse_and_format(raw)
   if raw == "" then return { "(empty output)" }, empty_hl end
 
   local ok, parsed = pcall(vim.fn.json_decode, raw)
-  if not ok then
+  if not ok or type(parsed) ~= "table" then
     return { "(unexpected output — not a query result)" }, empty_hl
   end
 
-  local results = parsed and parsed.results
+  local results = parsed.results
   if not results or #results == 0 then
     return { "(query returned no result set)" }, empty_hl
   end

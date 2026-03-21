@@ -7,6 +7,7 @@ local function fresh()
   package.loaded["ora.result.query"]   = nil
   package.loaded["ora.result.error"]   = nil
   package.loaded["ora.result.compile"] = nil
+  package.loaded["ora.result.multi"]   = nil
   package.loaded["ora.config"]         = nil
   -- Note: do NOT clear plenary.job here; stub_jobstart() sets it before tests run,
   -- and result runs plenary.job lazily inside run().
@@ -873,6 +874,163 @@ describe("ora.result.error", function()
 
     it("returns 'hard' for INDEX", function()
       assert.equals("hard", ws_mod.object_kind("INDEX"))
+    end)
+  end)
+
+  -- ─── multi output ──────────────────────────────────────────────────────
+
+  describe("multi", function()
+    local function make_multi(sections)
+      fresh()
+      local multi = require("ora.result.multi")
+      return multi.create({ sections = sections })
+    end
+
+    local function query_output(json)
+      return require("ora.result.query").create({ raw = json })
+    end
+
+    local function error_output(raw)
+      return require("ora.result.error").create({ raw = raw })
+    end
+
+    it("unwraps single section to child output", function()
+      local json = '{"results":[{"columns":[{"name":"X","type":"NUMBER"}],"items":[{"X":1}]}]}'
+      local child = query_output(json)
+      local output = make_multi({ { sql = "SELECT 1 FROM dual;", output = child } })
+      -- Single section → unwrapped, type should be the child's type
+      assert.equals("query", output.type)
+    end)
+
+    it("combines multiple sections with headers", function()
+      local json = '{"results":[{"columns":[{"name":"X","type":"NUMBER"}],"items":[{"X":1}]}]}'
+      local sections = {
+        { sql = "SELECT 1 FROM dual;", output = query_output(json) },
+        { sql = "SELECT 2 FROM dual;", output = query_output(json) },
+      }
+      local output = make_multi(sections)
+      assert.equals("multi", output.type)
+      assert.equals("2 Blocks", output.label)
+      local combined = table.concat(output.lines, "\n")
+      assert.matches("%[1%]", combined)
+      assert.matches("%[2%]", combined)
+    end)
+
+    it("shows error icon when any section has error", function()
+      local json = '{"results":[{"columns":[{"name":"X","type":"NUMBER"}],"items":[{"X":1}]}]}'
+      local sections = {
+        { sql = "SELECT 1 FROM dual;", output = query_output(json) },
+        { sql = "SELECT bad;", output = error_output("ORA-00942: table or view does not exist") },
+      }
+      local output = make_multi(sections)
+      assert.equals("DiagnosticError", output.icon_hl)
+    end)
+
+    it("render applies extmarks without error", function()
+      local json = '{"results":[{"columns":[{"name":"X","type":"NUMBER"}],"items":[{"X":1}]}]}'
+      local sections = {
+        { sql = "SELECT 1 FROM dual;", output = query_output(json) },
+        { sql = "SELECT 2 FROM dual;", output = query_output(json) },
+      }
+      local output = make_multi(sections)
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, output.lines)
+      assert.has_no_error(function()
+        output:render(bufnr)
+      end)
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    it("returns empty output for no sections", function()
+      local output = make_multi({})
+      assert.equals("multi", output.type)
+      assert.is_true(#output.lines > 0)
+    end)
+  end)
+
+  -- ─── SQL block splitting ────────────────────────────────────────────────
+
+  describe("split_sql_blocks()", function()
+    local split
+
+    before_each(function()
+      package.loaded["ora"] = nil
+      package.loaded["ora.config"] = nil
+      require("ora.config").setup({ sqlcl_path = "sql" })
+      split = require("ora")._split_sql_blocks
+    end)
+
+    it("splits simple statements by semicolons", function()
+      local blocks = split("select 1 from dual;\nselect 2 from dual;")
+      assert.equals(2, #blocks)
+    end)
+
+    it("treats PL/SQL begin...end with / as one block", function()
+      local sql = table.concat({
+        "select 1 from dual;",
+        "select 2 from dual;",
+        "select 3 from dual;",
+        "",
+        "begin",
+        "  dbms_output.put_line(1);",
+        "end;",
+        "/",
+        "",
+        "select 4 from dual;",
+      }, "\n")
+      local blocks = split(sql)
+      assert.equals(5, #blocks)
+      assert.matches("^select 1", blocks[1])
+      assert.matches("^select 2", blocks[2])
+      assert.matches("^select 3", blocks[3])
+      assert.matches("^begin", blocks[4])
+      assert.matches("end;", blocks[4])
+      assert.matches("/", blocks[4])
+      assert.matches("^select 4", blocks[5])
+    end)
+
+    it("includes SET directive in the PL/SQL block", function()
+      local sql = table.concat({
+        "select 1 from dual;",
+        "select 2 from dual;",
+        "select 3 from dual;",
+        "",
+        "set serveroutput on",
+        "begin",
+        "  dbms_output.put_line(1);",
+        "end;",
+        "/",
+        "",
+        "select 4 from dual;",
+      }, "\n")
+      local blocks = split(sql)
+      assert.equals(5, #blocks)
+      assert.matches("^select 3", blocks[3])
+      assert.matches("^set serveroutput", blocks[4])
+      assert.matches("end;", blocks[4])
+      assert.matches("^select 4", blocks[5])
+    end)
+
+    it("treats DECLARE block with / as one block", function()
+      local sql = "declare\n  v number;\nbegin\n  v := 1;\nend;\n/"
+      local blocks = split(sql)
+      assert.equals(1, #blocks)
+    end)
+
+    it("treats CREATE OR REPLACE FUNCTION with / as one block", function()
+      local sql = "create or replace function foo return number is\nbegin\n  return 1;\nend;\n/"
+      local blocks = split(sql)
+      assert.equals(1, #blocks)
+    end)
+
+    it("handles trailing block without terminator", function()
+      local blocks = split("select 1 from dual;\nselect 2 from dual")
+      assert.equals(2, #blocks)
+    end)
+
+    it("returns empty for blank input", function()
+      local blocks = split("")
+      assert.equals(0, #blocks)
     end)
   end)
 end)

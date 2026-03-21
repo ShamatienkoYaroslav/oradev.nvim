@@ -44,4 +44,4 @@
 [ ] Add result Ui output for plsql code (worksheet)
 [ ] Add result UI output for db object ddl: plsql and sql 
 [X] Add result UI output to show errors
-[ ] Add option to execute only selected code or code for a line where the cursor is 
+[X] Add option to execute only selected code or code for a line where the cursor is 

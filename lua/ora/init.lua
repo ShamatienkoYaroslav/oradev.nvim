@@ -119,6 +119,210 @@ function M.new_worksheet()
   vim.api.nvim_win_set_buf(ws_win, ws.bufnr)
 end
 
+-- ─── SQL block splitting ──────────────────────────────────────────────────
+
+---Check if a line is a statement terminator.
+---@param line string
+---@return boolean
+local function is_terminator(line)
+  local trimmed = vim.trim(line)
+  return trimmed:match(";%s*$") ~= nil or trimmed == "/"
+end
+
+---Check if a line starts a PL/SQL block (where `;` is internal, not a terminator).
+---@param line string
+---@return boolean
+local function starts_plsql_block(line)
+  local upper = vim.trim(line):upper()
+  if upper:match("^BEGIN%s") or upper == "BEGIN" then return true end
+  if upper:match("^DECLARE%s") or upper == "DECLARE" then return true end
+  if upper:match("^CREATE%s") and (
+    upper:match("FUNCTION") or upper:match("PROCEDURE") or
+    upper:match("PACKAGE") or upper:match("TRIGGER") or
+    upper:match("TYPE")
+  ) then return true end
+  return false
+end
+
+---Check if a line is a SQLcl SET directive (not a SQL statement).
+---@param line string
+---@return boolean
+local function is_set_directive(line)
+  return vim.trim(line):upper():match("^SET%s") ~= nil
+end
+
+---Split SQL text into individual blocks.
+---Simple statements are delimited by `;`. PL/SQL blocks (BEGIN/DECLARE/CREATE
+---FUNCTION etc.) are delimited by `/` on its own line.
+---@param text string
+---@return string[]
+local function split_sql_blocks(text)
+  local lines = vim.split(text, "\n", { plain = true })
+  local blocks = {}
+  local current = {}
+  local in_plsql = false
+
+  for _, line in ipairs(lines) do
+    local trimmed = vim.trim(line)
+
+    -- Detect PL/SQL block start
+    if not in_plsql and (starts_plsql_block(line) or is_set_directive(line)) then
+      in_plsql = true
+    end
+
+    table.insert(current, line)
+
+    if in_plsql then
+      -- PL/SQL block: only `/` on its own line terminates
+      if trimmed == "/" then
+        local block = vim.trim(table.concat(current, "\n"))
+        if block ~= "" then
+          table.insert(blocks, block)
+        end
+        current = {}
+        in_plsql = false
+      end
+    else
+      -- Simple SQL: `;` at end of line terminates
+      if trimmed:match(";%s*$") then
+        local block = vim.trim(table.concat(current, "\n"))
+        if block ~= "" then
+          table.insert(blocks, block)
+        end
+        current = {}
+      end
+    end
+  end
+
+  -- Remaining lines without terminator
+  local tail = vim.trim(table.concat(current, "\n"))
+  if tail ~= "" then
+    table.insert(blocks, tail)
+  end
+
+  return blocks
+end
+
+---Extract the SQL statement at the cursor position.
+---@param bufnr integer
+---@return string
+local function sql_at_cursor(bufnr)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local cursor_row = vim.api.nvim_win_get_cursor(0)[1]  -- 1-based
+
+  local start_row = 1
+  for r = cursor_row - 1, 1, -1 do
+    if is_terminator(lines[r]) then
+      start_row = r + 1
+      break
+    end
+  end
+  while start_row < cursor_row and vim.trim(lines[start_row]) == "" do
+    start_row = start_row + 1
+  end
+
+  local end_row = #lines
+  for r = cursor_row, #lines do
+    if is_terminator(lines[r]) then
+      end_row = r
+      break
+    end
+  end
+
+  local stmt_lines = {}
+  for r = start_row, end_row do
+    table.insert(stmt_lines, lines[r])
+  end
+  return table.concat(stmt_lines, "\n")
+end
+
+-- ─── block runner ─────────────────────────────────────────────────────────
+
+---Check if a SQL block is PL/SQL (BEGIN/DECLARE/SET or ends with `/`).
+---@param sql string
+---@return boolean
+local function is_plsql_block(sql)
+  local first = vim.trim(sql):upper()
+  if first:match("^BEGIN%s") or first:match("^BEGIN$") then return true end
+  if first:match("^DECLARE%s") or first:match("^DECLARE$") then return true end
+  if first:match("^SET%s") then return true end
+  if vim.trim(sql):match("/%s*$") then return true end
+  return false
+end
+
+---Build an output for a single raw query result (JSON).
+---@param raw string
+---@return OraResultOutput
+local function make_query_output(raw)
+  local error_output = require("ora.result.error")
+  if error_output.is_error(raw) then
+    return error_output.create({ raw = raw })
+  end
+  return require("ora.result.query").create({ raw = raw })
+end
+
+---Build an output for a PL/SQL block result (plain text).
+---@param raw string
+---@return OraResultOutput
+local function make_plsql_output(raw)
+  local error_output = require("ora.result.error")
+  if error_output.is_error(raw) then
+    return error_output.create({ raw = raw })
+  end
+  -- Success: show the output or a success message
+  return require("ora.result.compile").create({
+    raw         = raw,
+    object_name = "anonymous block",
+    object_type = "PL/SQL",
+  })
+end
+
+---Run a list of SQL blocks sequentially, collecting outputs.
+---Calls done(sections) when all blocks have been executed.
+---@param ws       OraWorksheet
+---@param blocks   string[]
+---@param result   table       the ora.result module
+---@param rbuf     integer     result buffer
+---@param done     fun(sections: OraMultiSection[])
+local function run_blocks(ws, blocks, result, rbuf, done)
+  local sections = {}
+  local idx = 0
+
+  local function next_block()
+    idx = idx + 1
+    if idx > #blocks then
+      done(sections)
+      return
+    end
+
+    local block_sql = blocks[idx]
+    local plsql = is_plsql_block(block_sql)
+    result.set_buf_lines(rbuf, { "-- running block " .. idx .. "/" .. #blocks .. "…" })
+
+    result.run(ws, function(raw, err)
+      local output
+      if err then
+        output = require("ora.result.error").create({ raw = err })
+      elseif plsql then
+        output = make_plsql_output(raw)
+      else
+        output = make_query_output(raw)
+      end
+      table.insert(sections, { sql = block_sql, output = output })
+      -- Stop on first error
+      if output.type == "error" then
+        done(sections)
+      else
+        next_block()
+      end
+    end, block_sql, plsql and { plsql = true } or nil)
+  end
+
+  next_block()
+end
+
+-- ─── execute worksheet ────────────────────────────────────────────────────
+
 ---Execute the current worksheet SQL and show the result as a formatted table
 ---in a split below the worksheet. If the buffer has no connection the
 ---connection picker is shown first.
@@ -142,25 +346,23 @@ function M.execute_worksheet()
 
   local function do_run()
     local result = require("ora.result")
-    local notify = require("ora.notify")
     local nid = "ora_exec"
     local rbuf = result.get_or_create_buf(ws)
     result.set_buf_lines(rbuf, { "-- running…" })
     result.show(rbuf)
-    notify.progress(nid, is_soft and "Compiling…" or "Executing query…")
-    result.run(ws, function(raw, err)
-      if err then
-        local error_output = require("ora.result.error")
-        local output = error_output.create({ raw = err })
-        result.display(rbuf, output)
-        notify.error(nid, is_soft and "Compilation failed" or "Query failed")
-        return
-      end
 
-      local output
-      if is_soft then
+    if is_soft then
+      -- Soft objects: compile the whole buffer as one unit
+      notify.progress(nid, "Compiling…")
+      result.run(ws, function(raw, err)
+        if err then
+          local output = require("ora.result.error").create({ raw = err })
+          result.display(rbuf, output)
+          notify.error(nid, "Compilation failed")
+          return
+        end
         local compile_output = require("ora.result.compile")
-        output = compile_output.create({
+        local output = compile_output.create({
           raw         = raw,
           object_name = ws.db_object.name,
           object_type = ws.db_object.type,
@@ -170,19 +372,38 @@ function M.execute_worksheet()
         else
           notify.done(nid, "Compiled successfully")
         end
+        local sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
+        result.push_history(ws, sql, output.lines)
+        result.display(rbuf, output)
+      end)
+      return
+    end
+
+    -- Anonymous worksheet: split into blocks and run sequentially
+    local full_sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
+    local blocks = split_sql_blocks(full_sql)
+    if #blocks == 0 then
+      notify.warn(nid, "Worksheet is empty")
+      return
+    end
+
+    notify.progress(nid, "Executing " .. #blocks .. " block" .. (#blocks == 1 and "" or "s") .. "…")
+
+    run_blocks(ws, blocks, result, rbuf, function(sections)
+      local multi = require("ora.result.multi")
+      local output = multi.create({ sections = sections })
+
+      local has_error = false
+      for _, sec in ipairs(sections) do
+        if sec.output.type == "error" then has_error = true end
+      end
+      if has_error then
+        notify.error(nid, "Execution completed with errors")
       else
-        local error_output = require("ora.result.error")
-        if error_output.is_error(raw) then
-          output = error_output.create({ raw = raw })
-          notify.error(nid, "Query failed")
-        else
-          output = require("ora.result.query").create({ raw = raw })
-          notify.done(nid, "Query complete")
-        end
+        notify.done(nid, "All blocks executed")
       end
 
-      local sql = table.concat(vim.api.nvim_buf_get_lines(ws.bufnr, 0, -1, false), "\n")
-      result.push_history(ws, sql, output.lines)
+      result.push_history(ws, full_sql, output.lines)
       result.display(rbuf, output)
     end)
   end
@@ -199,51 +420,7 @@ function M.execute_worksheet()
   end
 end
 
----Extract the SQL statement at the cursor position.
----Statements are delimited by `;` or `/` on its own line.
----@param bufnr integer
----@return string
-local function sql_at_cursor(bufnr)
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  local cursor_row = vim.api.nvim_win_get_cursor(0)[1]  -- 1-based
-
-  -- Find statement boundaries: scan backwards for start, forwards for end.
-  -- A statement ends at a line ending with `;` or a line that is just `/`.
-  local function is_terminator(line)
-    local trimmed = vim.trim(line)
-    return trimmed:match(";%s*$") or trimmed == "/"
-  end
-
-  -- Find start: go backwards from cursor row until we hit a terminator (previous statement)
-  -- or beginning of buffer.
-  local start_row = 1
-  for r = cursor_row - 1, 1, -1 do
-    if is_terminator(lines[r]) then
-      start_row = r + 1
-      break
-    end
-  end
-
-  -- Skip blank lines at the start
-  while start_row < cursor_row and vim.trim(lines[start_row]) == "" do
-    start_row = start_row + 1
-  end
-
-  -- Find end: go forwards from cursor row until we hit a terminator or end of buffer.
-  local end_row = #lines
-  for r = cursor_row, #lines do
-    if is_terminator(lines[r]) then
-      end_row = r
-      break
-    end
-  end
-
-  local stmt_lines = {}
-  for r = start_row, end_row do
-    table.insert(stmt_lines, lines[r])
-  end
-  return table.concat(stmt_lines, "\n")
-end
+-- ─── execute selected ─────────────────────────────────────────────────────
 
 ---Execute the selected SQL (visual selection) or the statement at cursor.
 ---Only works for regular worksheets (not db_object worksheets).
@@ -266,13 +443,11 @@ function M.execute_worksheet_selected()
   local mode = vim.fn.mode()
   local sql
   if mode == "v" or mode == "V" or mode == "\22" then
-    -- Visual mode: get selected lines
-    vim.cmd("normal! ")  -- exit visual to update '< and '> marks
+    vim.cmd("normal! \27")  -- exit visual to update '< and '> marks
     local start_row = vim.fn.line("'<")
     local end_row   = vim.fn.line("'>")
     local sel_lines = vim.api.nvim_buf_get_lines(bufnr, start_row - 1, end_row, false)
     if mode == "v" then
-      -- Character-wise: trim to selection columns
       local start_col = vim.fn.col("'<")
       local end_col   = vim.fn.col("'>")
       if #sel_lines == 1 then
@@ -295,32 +470,36 @@ function M.execute_worksheet_selected()
 
   local function do_run()
     local result = require("ora.result")
-    local notify = require("ora.notify")
     local nid = "ora_exec"
     local rbuf = result.get_or_create_buf(ws)
     result.set_buf_lines(rbuf, { "-- running…" })
     result.show(rbuf)
-    notify.progress(nid, "Executing query…")
-    result.run(ws, function(raw, err)
-      if err then
-        local error_output = require("ora.result.error")
-        local output = error_output.create({ raw = err })
-        result.display(rbuf, output)
-        notify.error(nid, "Query failed")
-        return
+
+    local blocks = split_sql_blocks(sql)
+    if #blocks == 0 then
+      notify.warn(nid, "No SQL to execute")
+      return
+    end
+
+    notify.progress(nid, "Executing " .. #blocks .. " block" .. (#blocks == 1 and "" or "s") .. "…")
+
+    run_blocks(ws, blocks, result, rbuf, function(sections)
+      local multi = require("ora.result.multi")
+      local output = multi.create({ sections = sections })
+
+      local has_error = false
+      for _, sec in ipairs(sections) do
+        if sec.output.type == "error" then has_error = true end
       end
-      local error_output = require("ora.result.error")
-      local output
-      if error_output.is_error(raw) then
-        output = error_output.create({ raw = raw })
-        notify.error(nid, "Query failed")
+      if has_error then
+        notify.error(nid, "Execution completed with errors")
       else
-        output = require("ora.result.query").create({ raw = raw })
-        notify.done(nid, "Query complete")
+        notify.done(nid, "All blocks executed")
       end
+
       result.push_history(ws, sql, output.lines)
       result.display(rbuf, output)
-    end, sql)
+    end)
   end
 
   if ws.connection then
@@ -389,5 +568,8 @@ function M.explorer()
   end
   require("neo-tree.command").execute({ source = "ora", position = "left" })
 end
+
+-- Exposed for testing
+M._split_sql_blocks = split_sql_blocks
 
 return M

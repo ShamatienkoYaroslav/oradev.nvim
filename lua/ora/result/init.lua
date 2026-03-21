@@ -7,6 +7,7 @@ local M = {}
 require("ora.result.query")
 require("ora.result.error")
 require("ora.result.compile")
+require("ora.result.multi")
 
 -- ─── highlights ─────────────────────────────────────────────────────────────
 
@@ -94,7 +95,9 @@ end
 ---@param ws       OraWorksheet
 ---@param callback fun(raw: string|nil, err: string|nil)
 ---@param override_sql? string  optional SQL to execute instead of the full buffer
-function M.run(ws, callback, override_sql)
+---@param opts?    { plsql?: boolean }  plsql=true skips JSON format, adds SHOW ERRORS
+function M.run(ws, callback, override_sql, opts)
+  opts = opts or {}
   local conn = ws.connection
   local cfg  = require("ora.config").values
 
@@ -111,16 +114,17 @@ function M.run(ws, callback, override_sql)
   local script = vim.fn.tempname() .. ".sql"
 
   local is_soft = ws.db_object and ws.db_object.kind == "soft"
+  local plain_text = is_soft or opts.plsql
 
   local f = assert(io.open(script, "w"))
   f:write("SET ECHO OFF\n")
   f:write("SET FEEDBACK OFF\n")
-  if not is_soft then
+  if not plain_text then
     f:write("SET SQLFORMAT JSON\n")
   end
   f:write("SPOOL " .. spool .. "\n")
   f:write(sql .. "\n")
-  if is_soft then
+  if plain_text then
     f:write("SHOW ERRORS\n")
   end
   f:write("SPOOL OFF\n")
