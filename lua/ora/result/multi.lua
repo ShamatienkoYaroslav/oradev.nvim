@@ -100,8 +100,8 @@ local function create(data)
 
   return {
     type    = "multi",
-    label   = #sections .. " Blocks",
-    icon    = "󰓫 ",
+    label   = has_error and "Errors" or "Results",
+    icon    = has_error and "󰅚 " or "󰓫 ",
     icon_hl = has_error and "DiagnosticError" or "Type",
     lines   = all_lines,
     render  = function(_, bufnr)

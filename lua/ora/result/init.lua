@@ -108,17 +108,26 @@ function M.run(ws, callback, override_sql, opts)
     callback(nil, "worksheet is empty")
     return
   end
-  if not sql:match("[;/]%s*$") then sql = sql .. ";" end
+  local is_soft = ws.db_object and ws.db_object.kind == "soft"
+  local plain_text = is_soft or opts.plsql
+
+  -- PL/SQL CREATE statements need `/` to execute, not just `;`
+  if plain_text and not sql:match("/%s*$") then
+    sql = sql .. "\n/"
+  elseif not plain_text and not sql:match("[;/]%s*$") then
+    sql = sql .. ";"
+  end
 
   local spool  = vim.fn.tempname() .. ".log"
   local script = vim.fn.tempname() .. ".sql"
 
-  local is_soft = ws.db_object and ws.db_object.kind == "soft"
-  local plain_text = is_soft or opts.plsql
-
   local f = assert(io.open(script, "w"))
   f:write("SET ECHO OFF\n")
-  f:write("SET FEEDBACK OFF\n")
+  if plain_text then
+    f:write("SET FEEDBACK ON\n")
+  else
+    f:write("SET FEEDBACK OFF\n")
+  end
   if not plain_text then
     f:write("SET SQLFORMAT JSON\n")
   end

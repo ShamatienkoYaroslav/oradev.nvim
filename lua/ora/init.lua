@@ -366,6 +366,7 @@ function M.execute_worksheet()
           raw         = raw,
           object_name = ws.db_object.name,
           object_type = ws.db_object.type,
+          is_soft     = true,
         })
         if require("ora.result.error").is_error(raw) then
           notify.error(nid, "Compilation failed")

@@ -318,7 +318,7 @@ local function create(data)
   local lines, hl_data = parse_and_format(data.raw)
   return {
     type    = "query",
-    label   = "Query Result",
+    label   = "Results",
     icon    = "󰓫 ",
     icon_hl = "Type",
     lines   = lines,

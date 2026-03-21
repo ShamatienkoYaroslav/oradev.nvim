@@ -261,7 +261,7 @@ local function create(data)
   local lines, hl_data = format_errors(errors)
   return {
     type    = "error",
-    label   = "Error",
+    label   = "Errors",
     icon    = "󰅚 ",
     icon_hl = "DiagnosticError",
     lines   = lines,

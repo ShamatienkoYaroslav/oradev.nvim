@@ -41,7 +41,7 @@
 [ ] Fix the bug when a user can't see type body's code
 [X] Fix a bug with connections tree
 [ ] Add the explain plan (result ui output)
-[ ] Add result Ui output for plsql code (worksheet)
-[ ] Add result UI output for db object ddl: plsql and sql 
+[X] Add result Ui output for plsql code (worksheet)
+[X] Add result UI output for db object ddl: plsql and sql 
 [X] Add result UI output to show errors
 [X] Add option to execute only selected code or code for a line where the cursor is 
