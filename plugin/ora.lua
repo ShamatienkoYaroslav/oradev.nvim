@@ -4,7 +4,7 @@ vim.g.loaded_ora = true
 -- Icon highlight groups (default = true so colorschemes can override)
 vim.api.nvim_set_hl(0, "OraIconPackage", { fg = "#d19a66", default = true })
 
-vim.api.nvim_create_user_command("OraConnectionsList", function()
+vim.api.nvim_create_user_command("OraOpenSqlcl", function()
   require("ora").list()
 end, { desc = "List saved Oracle connections (from SQLcl connmgr) and connect" })
 

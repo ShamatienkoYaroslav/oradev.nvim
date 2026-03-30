@@ -25,7 +25,14 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
     "nvim-neo-tree/neo-tree.nvim",
   },
   keys = {
-    { "<leader>oe", "<cmd>OraExplorer<cr>", desc = "Open Oracle Explorer" },
+    { "<leader>oe", "<cmd>OraExplorer<cr>",                  desc = "Toggle Oracle Explorer" },
+    { "<leader>os", "<cmd>OraOpenSqlcl<cr>",                 desc = "Open SQLcl" },
+    { "<leader>on", "<cmd>OraWorksheetNew<cr>",              desc = "New worksheet" },
+    { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
+    { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
+    { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
+    { "<leader>oc", "<cmd>OraWorksheetChangeConnection<cr>", desc = "Change connection" },
+    { "<leader>oa", "<cmd>OraQuickAction<cr>",               desc = "Quick action" },
   },
   config = function()
     require("ora").setup({
@@ -71,6 +78,34 @@ require("ora").setup({
 })
 ```
 
+### Keybindings
+
+The plugin does not set any global keybindings by default. Add your own in the `keys` table (lazy.nvim) or with `vim.keymap.set`:
+
+```lua
+-- lazy.nvim keys table
+keys = {
+  { "<leader>oe", "<cmd>OraExplorer<cr>",                  desc = "Toggle Oracle Explorer" },
+  { "<leader>os", "<cmd>OraOpenSqlcl<cr>",           desc = "Open SQLcl" },
+  { "<leader>on", "<cmd>OraWorksheetNew<cr>",              desc = "New worksheet" },
+  { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
+  { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
+  { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
+  { "<leader>oc", "<cmd>OraWorksheetChangeConnection<cr>", desc = "Change connection" },
+  { "<leader>oa", "<cmd>OraQuickAction<cr>",               desc = "Quick action" },
+},
+
+-- or with vim.keymap.set
+vim.keymap.set("n", "<leader>oe", "<cmd>OraExplorer<cr>",                  { desc = "Toggle Oracle Explorer" })
+vim.keymap.set("n", "<leader>oc", "<cmd>OraOpenSqlcl<cr>",           { desc = "List connections" })
+vim.keymap.set("n", "<leader>on", "<cmd>OraWorksheetNew<cr>",              { desc = "New worksheet" })
+vim.keymap.set("n", "<leader>or", "<cmd>OraWorksheetExecute<cr>",          { desc = "Run worksheet" })
+vim.keymap.set("v", "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  { desc = "Run selection" })
+vim.keymap.set("n", "<leader>of", "<cmd>OraWorksheetFormat<cr>",           { desc = "Format worksheet" })
+vim.keymap.set("n", "<leader>ow", "<cmd>OraWorksheetChangeConnection<cr>", { desc = "Change connection" })
+vim.keymap.set("n", "<leader>oa", "<cmd>OraQuickAction<cr>",               { desc = "Quick action" })
+```
+
 Named connections are managed through SQLcl's built-in connection manager (`connmgr`).
 Use the connection picker (`a` key) to add them — no hardcoded credentials in your config.
 
@@ -88,10 +123,10 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 
 ### Connections
 
-| Command               | Description                                             |
-| --------------------- | ------------------------------------------------------- |
-| `:OraConnectionsList` | List saved connections (from SQLcl connmgr) and connect |
-| `:OraConnect <url>`   | Connect directly with a connection string               |
+| Command             | Description                                             |
+| ------------------- | ------------------------------------------------------- |
+| `:OraOpenSqlcl`     | List saved connections (from SQLcl connmgr) and connect |
+| `:OraConnect <url>` | Connect directly with a connection string               |
 
 ### Worksheets
 
@@ -338,7 +373,7 @@ make dev
 nvim -u dev/init.lua
 ```
 
-Then run `:OraExplorer` to open the schema explorer, `:OraConnectionsList` to open the connection picker, or `:OraWorksheetNew` to open a SQL worksheet.
+Then run `:OraExplorer` to open the schema explorer, `:OraOpenSqlcl` to open the connection picker, or `:OraWorksheetNew` to open a SQL worksheet.
 
 ### Running automated tests
 

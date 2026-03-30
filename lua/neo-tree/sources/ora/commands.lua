@@ -48,10 +48,15 @@ local function open_ws_in_main(ws)
 end
 
 ---Format the content of a worksheet buffer using SQLcl's formatter.
----@param bufnr integer
-local function format_buffer(bufnr)
+---@param ws OraWorksheet
+local function format_buffer(ws)
   local format = require("ora.format")
-  format.run(bufnr, function(err) if err then notify.error("ora", "format failed: " .. err) end end)
+  format.run(ws.bufnr, function(err)
+    if err then notify.error("ora", "format failed: " .. err) end
+    if ws.db_object and vim.api.nvim_buf_is_valid(ws.bufnr) then
+      vim.api.nvim_buf_set_option(ws.bufnr, "modified", false)
+    end
+  end)
 end
 
 ---Fetch a DROP DDL statement from the database and open it in a worksheet.
@@ -99,7 +104,7 @@ local function open_drop_worksheet(state, conn_name, object_name, object_type)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "DROP DDL loaded")
   end)
 end
@@ -634,7 +639,7 @@ M._open_mview_action = function(state, node)
       vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_ws_in_main(ws)
-      format_buffer(ws.bufnr)
+      format_buffer(ws)
       notify.done(nid, "Materialized view DDL loaded")
     end)
   end
@@ -676,7 +681,7 @@ M._open_mview_log_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Materialized view log DDL loaded")
   end)
 end
@@ -730,7 +735,7 @@ M._open_view_action = function(state, node)
       vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_ws_in_main(ws)
-      format_buffer(ws.bufnr)
+      format_buffer(ws)
       notify.done(nid, "View DDL loaded")
     end)
   elseif action == "data" then
@@ -745,7 +750,7 @@ M._open_view_action = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. view_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
   end
 end
 
@@ -821,7 +826,7 @@ M._open_table_action = function(state, node)
       vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
       vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
       open_in_main(ws)
-      format_buffer(ws.bufnr)
+      format_buffer(ws)
       notify.done(nid, "DDL loaded")
     end)
   elseif action == "data" then
@@ -837,7 +842,7 @@ M._open_table_action = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. table_name .. ";" })
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
   end
 end
 
@@ -880,7 +885,7 @@ M._open_synonym_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Synonym DDL loaded")
   end)
 end
@@ -924,7 +929,7 @@ M._open_sequence_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Sequence DDL loaded")
   end)
 end
@@ -968,7 +973,7 @@ M._open_index_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Index DDL loaded")
   end)
 end
@@ -1035,7 +1040,7 @@ M._open_package_source = function(state, node)
     end
 
     ws_mod.refresh_winbar(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Package source loaded")
   end)
 end
@@ -1142,7 +1147,7 @@ M._open_type_source = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Type source loaded")
   end)
 end
@@ -1306,7 +1311,7 @@ M._open_object_source = function(state, node)
       vim.api.nvim_win_set_buf(0, ws.bufnr)
     end
     ws_mod.refresh_winbar(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Source loaded")
   end)
 end
@@ -1416,7 +1421,7 @@ M._open_scheduler_job_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Scheduler job DDL loaded")
   end)
 end
@@ -1490,7 +1495,7 @@ M._open_scheduler_program_ddl = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Scheduler program DDL loaded")
   end)
 end
@@ -1665,7 +1670,7 @@ M._open_ords_define_module = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Module DDL loaded")
   end)
 end
@@ -1720,7 +1725,7 @@ M._open_ords_define_template = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Template DDL loaded")
   end)
 end
@@ -1792,7 +1797,7 @@ M._open_ords_define_handler = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Handler DDL loaded")
   end
 
@@ -1854,7 +1859,7 @@ M._open_ords_define_parameter = function(state, node)
   vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
   open_ws_in_main(ws)
-  format_buffer(ws.bufnr)
+  format_buffer(ws)
 end
 
 ---Open the full DDL of an ORDS module in a new worksheet.
@@ -2002,7 +2007,7 @@ M._open_ords_ddl_worksheet = function(state, conn_name, module_name, lines)
   vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
   open_ws_in_main(ws)
-  format_buffer(ws.bufnr)
+  format_buffer(ws)
 end
 
 ---Export the full ORDS schema via ords_export_admin.export_schema.
@@ -2040,7 +2045,7 @@ M._open_ords_export_schema = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "ORDS schema exported")
   end)
 end
@@ -2081,7 +2086,7 @@ M._open_ords_export_module = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "ORDS module exported")
   end)
 end
@@ -2118,7 +2123,7 @@ M._open_ords_handler_source = function(state, node)
     vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, lines or {})
     vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
     open_ws_in_main(ws)
-    format_buffer(ws.bufnr)
+    format_buffer(ws)
     notify.done(nid, "Handler source loaded")
   end)
 end
@@ -2785,7 +2790,7 @@ M.show_actions = function(state)
           vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, buf_lines)
           vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
           open_ws_in_main(ws)
-          format_buffer(ws.bufnr)
+          format_buffer(ws)
           notify.done(nid, "Trigger DDL loaded")
         end)
       elseif choice == "Drop trigger" then

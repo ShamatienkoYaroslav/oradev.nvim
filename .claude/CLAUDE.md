@@ -12,7 +12,7 @@ make test
 make test-file FILE=spec/ora/config_spec.lua
 
 # Launch nvim with the plugin loaded for interactive testing
-make dev   # then :OraExplorer, :OraConnectionsList, :OraWorksheetNew, :OraQuickAction
+make dev   # then :OraExplorer, :OraOpenSqlcl, :OraWorksheetNew, :OraQuickAction
 
 # Syntax-check a single Lua file (quick sanity check, no plenary needed)
 nvim --headless -u NONE --cmd "set rtp+=." \
@@ -25,7 +25,7 @@ Tests use **plenary.nvim** (busted runner). Plenary must be installed at
 ## Architecture
 
 `plugin/ora.lua` is the auto-loaded entry point. It registers the user commands
-(`OraConnectionsList`, `OraConnect`, `OraAddConnection`, `OraWorksheetNew`,
+(`OraOpenSqlcl`, `OraConnect`, `OraAddConnection`, `OraWorksheetNew`,
 `OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetFormat`,
 `OraWorksheetChangeConnection`, `OraQuickAction`, `OraExplorer`) and guards against double-loading
 with `vim.g.loaded_ora`. It never does any work itself — it delegates to

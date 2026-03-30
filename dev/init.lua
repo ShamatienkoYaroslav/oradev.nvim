@@ -3,7 +3,7 @@
 --
 -- Starts Neovim with the plugin loaded. Connections are read from the SQLcl
 -- connection manager — run :OraAddConnection to add one first if needed.
--- Then run :OraConnectionsList to open the picker.
+-- Then run :OraOpenSqlcl to open the picker.
 
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
