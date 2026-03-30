@@ -37,7 +37,6 @@
 [X] Add command to close the explorer
 [ ] Add wallets support
 [ ] Add support for a password prompt
-[ ] Improve the Results UI
 [ ] Fix the bug when a user can't see type body's code
 [X] Fix a bug with connections tree
 [ ] Add the explain plan (result ui output)
@@ -45,3 +44,4 @@
 [X] Add result UI output for db object ddl: plsql and sql 
 [X] Add result UI output to show errors
 [X] Add option to execute only selected code or code for a line where the cursor is 
+[ ] Add a new command and a connectionm action to show active sessions

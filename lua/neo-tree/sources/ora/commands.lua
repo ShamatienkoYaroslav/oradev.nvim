@@ -2284,8 +2284,8 @@ M.collapse_node = function(state)
   end
 end
 
----Context-aware refresh. On a category or table node, re-fetches its children.
----Otherwise refreshes the full connection list from connmgr.
+---Context-aware refresh. Re-fetches the children of the current node.
+---Falls back to refreshing the full connection list from connmgr.
 M.refresh = function(state)
   local node = state.tree and state.tree:get_node()
   if not node then
@@ -2293,63 +2293,45 @@ M.refresh = function(state)
     return
   end
 
-  if node.type == "category" and node.extra and node.extra.loaded then
-    -- Collapse, clear cache, then re-fetch (which will expand)
-    node:collapse()
-    node.extra.loaded = false
-    -- Also clear in the state cache
-    M._clear_cached_node(state, node)
-    M._toggle_category(state, node)
-  elseif node.type == "table" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_table(state, node)
-  elseif node.type == "view" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_view(state, node)
-  elseif node.type == "mview" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_mview(state, node)
-  elseif node.type == "package" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_package(state, node)
-  elseif node.type == "ora_type" and node.extra and node.extra.loaded then
+  local type_to_toggle = {
+    category          = M._toggle_category,
+    table             = M._toggle_table,
+    view              = M._toggle_view,
+    mview             = M._toggle_mview,
+    package           = M._toggle_package,
+    ora_type          = M._toggle_type,
+    subprogram        = M._toggle_subprogram,
+    scheduler_job     = M._toggle_scheduler_job,
+    scheduler_program = M._toggle_scheduler_program,
+    ords_module       = M._toggle_ords_module,
+    ords_template     = M._toggle_ords_template,
+    ords_handler      = M._toggle_ords_handler,
+  }
+
+  -- function/procedure share a toggle
+  type_to_toggle["function"]  = M._toggle_func_or_proc
+  type_to_toggle["procedure"] = M._toggle_func_or_proc
+
+  local toggle_fn = type_to_toggle[node.type]
+  if toggle_fn and node.extra and node.extra.loaded then
     node:collapse()
     node.extra.loaded = false
     M._clear_cached_node(state, node)
-    M._toggle_type(state, node)
-  elseif node.type == "subprogram" and node.extra and node.extra.loaded then
+    toggle_fn(state, node)
+  elseif node.type == "connection" and node.extra and state.ora_connected and state.ora_connected[node.extra.key] then
+    -- Refresh a connected connection: clear cached categories and re-navigate
+    local name = node.extra.key
+    if state.ora_children then state.ora_children[name] = nil end
     node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_subprogram(state, node)
-  elseif (node.type == "function" or node.type == "procedure") and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_func_or_proc(state, node)
-  elseif node.type == "ords_module" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_ords_module(state, node)
-  elseif node.type == "ords_template" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_ords_template(state, node)
-  elseif node.type == "ords_handler" and node.extra and node.extra.loaded then
-    node:collapse()
-    node.extra.loaded = false
-    M._clear_cached_node(state, node)
-    M._toggle_ords_handler(state, node)
+    local ora_source = require("neo-tree.sources.ora")
+    ora_source.navigate(state)
+    if state.tree then
+      local conn_node = state.tree:get_node("conn:" .. name)
+      if conn_node then
+        conn_node:expand()
+        renderer.redraw(state)
+      end
+    end
   else
     refresh()
   end

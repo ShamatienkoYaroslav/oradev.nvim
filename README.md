@@ -24,6 +24,9 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
     "folke/snacks.nvim",
     "nvim-neo-tree/neo-tree.nvim",
   },
+  keys = {
+    { "<leader>oe", "<cmd>OraExplorer<cr>", desc = "Open Oracle Explorer" },
+  },
   config = function()
     require("ora").setup({
       sqlcl_path = "/opt/oracle/sqlcl/bin/sql",

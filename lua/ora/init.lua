@@ -567,7 +567,7 @@ function M.explorer()
     notify.error("ora", "call require('ora').setup({...}) first")
     return
   end
-  require("neo-tree.command").execute({ source = "ora", position = "left" })
+  require("neo-tree.command").execute({ source = "ora", position = "left", toggle = true })
 end
 
 -- Exposed for testing
