@@ -26,7 +26,7 @@ Tests use **plenary.nvim** (busted runner). Plenary must be installed at
 
 `plugin/ora.lua` is the auto-loaded entry point. It registers the user commands
 (`OraOpenSqlcl`, `OraConnect`, `OraAddConnection`, `OraWorksheetNew`,
-`OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetFormat`,
+`OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetExplainPlan`, `OraWorksheetExecutionPlan`, `OraWorksheetFormat`,
 `OraWorksheetChangeConnection`, `OraQuickAction`, `OraExplorer`) and guards against double-loading
 with `vim.g.loaded_ora`. It never does any work itself — it delegates to
 `lua/ora/init.lua`.
@@ -56,11 +56,26 @@ via `plenary.Job:sync()`.
 `register(bufnr)` adopts an existing buffer. Each worksheet has a winbar showing
 the worksheet/object name (left) and connection name (right).
 
+`lua/ora/ui/showcase.lua` is a **scratch buffer wrapper** for displaying
+information and hosting controls. Buffers are `buftype=nofile`, never saved to
+disk, and not tracked as worksheets. Key functions: `create(opts)`,
+`find(bufnr)`, `find_by_name(name)`, `list()`, `set_lines(sc, lines)`,
+`set_title(sc, title)`, `set_icon(sc, icon, icon_hl)`,
+`set_highlights(sc, ns_id, highlights)`, `show(sc, opts)`, `hide(sc)`,
+`destroy(sc)`. Each showcase has a winbar (icon + title) using
+`OraShowcaseWinbar` / `OraShowcaseWinbarDim` highlight groups.
+
+`lua/ora/ui/showcase/data_table.lua` is a **paginated data table** component
+built on top of the showcase UI. Fetches rows via `schema.fetch_raw_query` in
+pages of 50, renders using `result.query` formatting, and provides `n`/`p`/`f`
+keymaps for next/previous/first page navigation. Called from the explorer's
+"show data" action for tables, views, and materialized views.
+
 `lua/ora/result/init.lua` is the result **container**: manages the per-worksheet
 result buffer, the belowright split window, and a winbar showing the output type
 icon and label. It runs worksheet SQL via one-shot SQLcl jobs and delegates
 content rendering to output type modules. Key functions: `get_or_create_buf`,
-`set_buf_lines`, `display(bufnr, output)`, `show`, `run`, `push_history`.
+`set_buf_lines`, `display(bufnr, output)`, `show`, `run`, `run_explain`, `push_history`.
 
 `lua/ora/result/output.lua` is the output type **registry**. Each output type
 registers a constructor via `output.register(type_name, constructor)`. New output
@@ -69,6 +84,15 @@ types can be created with `output.create(type_name, data)`.
 `lua/ora/result/query.lua` is the **query** output type: parses JSON result sets
 from SQLcl, formats them as column-aligned ASCII tables with header highlighting
 and NULL cell markers. Constructor: `create({ raw = spool_content })`.
+
+`lua/ora/result/explain.lua` is the **explain** output type: parses
+DBMS_XPLAN.DISPLAY output and re-formats it as a bordered table matching the
+query output style. Constructor: `create({ raw = spool_content })`.
+
+`lua/ora/result/execution.lua` is the **execution** output type: displays actual
+execution plans with runtime statistics (A-Rows, A-Time, Buffers) from
+DBMS_XPLAN.DISPLAY_CURSOR. Reuses the explain parser. Constructor:
+`create({ raw = spool_content })`.
 
 `lua/ora/format.lua` formats worksheet SQL using SQLcl's `FORMAT FILE` command.
 Runs `/nolog` (no DB connection required).
@@ -109,6 +133,7 @@ Uses `plenary.Job:start()` for async queries. Functions include:
 - `fetch_ords_handler_details` — `user_ords_handlers` + templates + modules join (method, source_type, module_name, uri_template, mimes_allowed, comments)
 - `fetch_ords_module_handlers` — joins `user_ords_templates` + `user_ords_handlers` by module_id (multi-column: uri_template, method, source_type, handler_id)
 - `fetch_ords_handler_source` — `user_ords_handlers` source column (CLOB, plain text spool)
+- `fetch_raw_query` — runs arbitrary SQL and returns raw JSON spool content (used by showcase data table for pagination)
 
 ### Neo-tree explorer
 

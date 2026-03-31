@@ -33,6 +33,14 @@ vim.api.nvim_create_user_command("OraWorksheetExecuteSelected", function()
   require("ora").execute_worksheet_selected()
 end, { desc = "Execute selected SQL or statement at cursor", range = true })
 
+vim.api.nvim_create_user_command("OraWorksheetExplainPlan", function()
+  require("ora").explain_worksheet()
+end, { desc = "Show explain plan for the worksheet or visual selection", range = true })
+
+vim.api.nvim_create_user_command("OraWorksheetExecutionPlan", function()
+  require("ora").execution_plan()
+end, { desc = "Show actual execution plan for the worksheet or visual selection", range = true })
+
 vim.api.nvim_create_user_command("OraWorksheetFormat", function()
   require("ora").format_worksheet()
 end, { desc = "Format the current worksheet SQL using SQLcl" })

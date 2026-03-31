@@ -598,17 +598,13 @@ M._open_mview_action = function(state, node)
   local ws_conn = { key = conn_name, label = conn_name, is_named = true }
 
   if action == "data" then
-    local display = schema_name(state, conn_name) .. "." .. mview_name .. " (Materialized View Data)"
-    local ws = ws_mod.create({
-      connection   = ws_conn,
-      name         = mview_name .. "-data",
-      display_name = display,
-      icon         = "󰡠 ",
-      db_object    = { name = mview_name, type = "MATERIALIZED VIEW", schema = schema_name(state, conn_name), kind = "hard" },
+    require("ora.ui.showcase.data_table").open({
+      conn_name   = conn_name,
+      object_name = mview_name,
+      schema_name = schema_name(state, conn_name),
+      object_type = "Materialized View",
+      icon        = "󰡠 ",
     })
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. mview_name .. ";" })
-    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
-    open_ws_in_main(ws)
   else
     -- DDL
   
@@ -739,18 +735,13 @@ M._open_view_action = function(state, node)
       notify.done(nid, "View DDL loaded")
     end)
   elseif action == "data" then
-    local display = schema_name(state, conn_name) .. "." .. view_name .. " (View Data)"
-    local ws = ws_mod.create({
-      connection   = ws_conn,
-      name         = view_name .. "-data",
-      display_name = display,
-      icon         = "󰡠 ",
-      db_object    = { name = view_name, type = "VIEW", schema = schema_name(state, conn_name), kind = "soft" },
+    require("ora.ui.showcase.data_table").open({
+      conn_name   = conn_name,
+      object_name = view_name,
+      schema_name = schema_name(state, conn_name),
+      object_type = "View",
+      icon        = "󰡠 ",
     })
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. view_name .. ";" })
-    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
-    open_ws_in_main(ws)
-    format_buffer(ws)
   end
 end
 
@@ -830,19 +821,13 @@ M._open_table_action = function(state, node)
       notify.done(nid, "DDL loaded")
     end)
   elseif action == "data" then
-    local display = schema_name(state, conn_name) .. "." .. table_name .. " (Table Data)"
-    local ws = ws_mod.create({
-      connection   = ws_conn,
-      name         = table_name .. "-data",
-      display_name = display,
-      icon         = "󰓫 ",
-      db_object    = { name = table_name, type = "TABLE", schema = schema_name(state, conn_name), kind = "hard" },
+    require("ora.ui.showcase.data_table").open({
+      conn_name   = conn_name,
+      object_name = table_name,
+      schema_name = schema_name(state, conn_name),
+      object_type = "Table",
+      icon        = "󰓫 ",
     })
-
-    vim.api.nvim_buf_set_lines(ws.bufnr, 0, -1, false, { "SELECT * FROM " .. table_name .. ";" })
-    vim.api.nvim_buf_set_option(ws.bufnr, "filetype", "plsql")
-    open_in_main(ws)
-    format_buffer(ws)
   end
 end
 

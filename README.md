@@ -31,6 +31,10 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
     { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
     { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
     { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
+    { "<leader>ox", "<cmd>OraWorksheetExplainPlan<cr>",          desc = "Explain plan" },
+    { "<leader>oX", "<cmd>OraWorksheetExplainPlan<cr>",          desc = "Explain selection", mode = "v" },
+    { "<leader>op", "<cmd>OraWorksheetExecutionPlan<cr>",    desc = "Execution plan" },
+    { "<leader>oP", "<cmd>OraWorksheetExecutionPlan<cr>",    desc = "Execution plan selection", mode = "v" },
     { "<leader>oc", "<cmd>OraWorksheetChangeConnection<cr>", desc = "Change connection" },
     { "<leader>oa", "<cmd>OraQuickAction<cr>",               desc = "Quick action" },
   },
@@ -91,19 +95,27 @@ keys = {
   { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
   { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
   { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
+  { "<leader>ox", "<cmd>OraWorksheetExplainPlan<cr>",          desc = "Explain plan" },
+  { "<leader>oX", "<cmd>OraWorksheetExplainPlan<cr>",          desc = "Explain selection", mode = "v" },
+  { "<leader>op", "<cmd>OraWorksheetExecutionPlan<cr>",    desc = "Execution plan" },
+  { "<leader>oP", "<cmd>OraWorksheetExecutionPlan<cr>",    desc = "Execution plan selection", mode = "v" },
   { "<leader>oc", "<cmd>OraWorksheetChangeConnection<cr>", desc = "Change connection" },
   { "<leader>oa", "<cmd>OraQuickAction<cr>",               desc = "Quick action" },
 },
 
 -- or with vim.keymap.set
-vim.keymap.set("n", "<leader>oe", "<cmd>OraExplorer<cr>",                  { desc = "Toggle Oracle Explorer" })
-vim.keymap.set("n", "<leader>oc", "<cmd>OraOpenSqlcl<cr>",           { desc = "List connections" })
-vim.keymap.set("n", "<leader>on", "<cmd>OraWorksheetNew<cr>",              { desc = "New worksheet" })
-vim.keymap.set("n", "<leader>or", "<cmd>OraWorksheetExecute<cr>",          { desc = "Run worksheet" })
-vim.keymap.set("v", "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  { desc = "Run selection" })
-vim.keymap.set("n", "<leader>of", "<cmd>OraWorksheetFormat<cr>",           { desc = "Format worksheet" })
-vim.keymap.set("n", "<leader>ow", "<cmd>OraWorksheetChangeConnection<cr>", { desc = "Change connection" })
-vim.keymap.set("n", "<leader>oa", "<cmd>OraQuickAction<cr>",               { desc = "Quick action" })
+vim.keymap.set("n", "<leader>oe", "<cmd>OraExplorer<cr>",                    { desc = "Toggle Oracle Explorer" })
+vim.keymap.set("n", "<leader>oc", "<cmd>OraOpenSqlcl<cr>",                   { desc = "List connections" })
+vim.keymap.set("n", "<leader>on", "<cmd>OraWorksheetNew<cr>",                { desc = "New worksheet" })
+vim.keymap.set("n", "<leader>or", "<cmd>OraWorksheetExecute<cr>",            { desc = "Run worksheet" })
+vim.keymap.set("v", "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",    { desc = "Run selection" })
+vim.keymap.set("n", "<leader>of", "<cmd>OraWorksheetFormat<cr>",             { desc = "Format worksheet" })
+vim.keymap.set("n", "<leader>ox", "<cmd>OraWorksheetExplainPlan<cr>",            { desc = "Explain plan" })
+vim.keymap.set("v", "<leader>oX", "<cmd>OraWorksheetExplainPlan<cr>",            { desc = "Explain selection" })
+vim.keymap.set("n", "<leader>op", "<cmd>OraWorksheetExecutionPlan<cr>",      { desc = "Execution plan" })
+vim.keymap.set("v", "<leader>oP", "<cmd>OraWorksheetExecutionPlan<cr>",      { desc = "Execution plan selection" })
+vim.keymap.set("n", "<leader>ow", "<cmd>OraWorksheetChangeConnection<cr>",   { desc = "Change connection" })
+vim.keymap.set("n", "<leader>oa", "<cmd>OraQuickAction<cr>",                 { desc = "Quick action" })
 ```
 
 Named connections are managed through SQLcl's built-in connection manager (`connmgr`).
@@ -134,6 +146,8 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | ------------------------------- | ----------------------------------------------------------------- |
 | `:OraWorksheetNew`              | Create a new SQL worksheet buffer                                 |
 | `:OraWorksheetExecute`          | Execute the current worksheet and show results in a split         |
+| `:OraWorksheetExplainPlan`          | Show explain plan for the worksheet or visual selection            |
+| `:OraWorksheetExecutionPlan`    | Show actual execution plan with runtime stats                     |
 | `:OraWorksheetFormat`           | Format the current worksheet SQL using SQLcl's built-in formatter |
 | `:OraWorksheetChangeConnection` | Change the connection for the current worksheet                   |
 
@@ -322,6 +336,12 @@ require("ora").new_worksheet()
 
 -- Execute the current worksheet
 require("ora").execute_worksheet()
+
+-- Show explain plan for the current worksheet or selection
+require("ora").explain_worksheet()
+
+-- Show actual execution plan with runtime stats
+require("ora").execution_plan()
 
 -- Format the current worksheet
 require("ora").format_worksheet()

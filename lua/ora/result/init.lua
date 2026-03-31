@@ -8,6 +8,8 @@ require("ora.result.query")
 require("ora.result.error")
 require("ora.result.compile")
 require("ora.result.multi")
+require("ora.result.explain")
+require("ora.result.execution")
 
 -- ─── highlights ─────────────────────────────────────────────────────────────
 
@@ -136,6 +138,161 @@ function M.run(ws, callback, override_sql, opts)
   if plain_text then
     f:write("SHOW ERRORS\n")
   end
+  f:write("SPOOL OFF\n")
+  f:write("EXIT\n")
+  f:close()
+
+  local args
+  if conn.is_named then
+    args = { cfg.sqlcl_path, "-name", conn.key, "-S", "@" .. script }
+  else
+    args = { cfg.sqlcl_path, conn.key, "-S", "@" .. script }
+  end
+
+  local Job = require("plenary.job")
+  Job:new({
+    command = args[1],
+    args    = vim.list_slice(args, 2),
+    on_exit = function(_, code)
+      os.remove(script)
+
+      local fh = io.open(spool, "r")
+      if not fh then
+        vim.schedule(function()
+          callback(nil,
+            "spool file missing (sqlcl exited with code " .. code .. ")")
+        end)
+        return
+      end
+      local raw = fh:read("*a")
+      fh:close()
+      os.remove(spool)
+
+      vim.schedule(function()
+        if code ~= 0 and vim.trim(raw) == "" then
+          callback(nil, "sqlcl exited with code " .. code)
+          return
+        end
+        callback(raw, nil)
+      end)
+    end,
+  }):start()
+end
+
+-- ─── explain plan job ────────────────────────────────────────────────────────
+
+---Run EXPLAIN PLAN FOR + DBMS_XPLAN.DISPLAY via a one-shot sqlcl job.
+---Calls `callback(raw, err)` with the raw spool content.
+---@param ws       OraWorksheet
+---@param sql      string          the SQL to explain
+---@param callback fun(raw: string|nil, err: string|nil)
+function M.run_explain(ws, sql, callback)
+  local conn = ws.connection
+  local cfg  = require("ora.config").values
+
+  sql = vim.trim(sql)
+  if sql == "" then
+    callback(nil, "worksheet is empty")
+    return
+  end
+
+  -- Strip trailing ; or / so EXPLAIN PLAN FOR doesn't choke
+  sql = sql:gsub("[;/]%s*$", "")
+
+  local spool  = vim.fn.tempname() .. ".log"
+  local script = vim.fn.tempname() .. ".sql"
+
+  local f = assert(io.open(script, "w"))
+  f:write("SET ECHO OFF\n")
+  f:write("SET FEEDBACK OFF\n")
+  f:write("SET HEADING OFF\n")
+  f:write("SET LINESIZE 200\n")
+  f:write("SET PAGESIZE 1000\n")
+  f:write("EXPLAIN PLAN FOR\n")
+  f:write(sql .. ";\n")
+  f:write("SPOOL " .. spool .. "\n")
+  f:write("SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);\n")
+  f:write("SPOOL OFF\n")
+  f:write("EXIT\n")
+  f:close()
+
+  local args
+  if conn.is_named then
+    args = { cfg.sqlcl_path, "-name", conn.key, "-S", "@" .. script }
+  else
+    args = { cfg.sqlcl_path, conn.key, "-S", "@" .. script }
+  end
+
+  local Job = require("plenary.job")
+  Job:new({
+    command = args[1],
+    args    = vim.list_slice(args, 2),
+    on_exit = function(_, code)
+      os.remove(script)
+
+      local fh = io.open(spool, "r")
+      if not fh then
+        vim.schedule(function()
+          callback(nil,
+            "spool file missing (sqlcl exited with code " .. code .. ")")
+        end)
+        return
+      end
+      local raw = fh:read("*a")
+      fh:close()
+      os.remove(spool)
+
+      vim.schedule(function()
+        if code ~= 0 and vim.trim(raw) == "" then
+          callback(nil, "sqlcl exited with code " .. code)
+          return
+        end
+        callback(raw, nil)
+      end)
+    end,
+  }):start()
+end
+
+-- ─── execution plan job ──────────────────────────────────────────────────────
+
+---Run a query with GATHER_PLAN_STATISTICS and fetch the actual execution plan
+---via DBMS_XPLAN.DISPLAY_CURSOR.
+---Calls `callback(raw, err)` with the raw spool content.
+---@param ws       OraWorksheet
+---@param sql      string          the SQL to execute
+---@param callback fun(raw: string|nil, err: string|nil)
+function M.run_execution(ws, sql, callback)
+  local conn = ws.connection
+  local cfg  = require("ora.config").values
+
+  sql = vim.trim(sql)
+  if sql == "" then
+    callback(nil, "worksheet is empty")
+    return
+  end
+
+  -- Strip trailing ; or / so the hint injection works cleanly
+  sql = sql:gsub("[;/]%s*$", "")
+
+  -- Inject GATHER_PLAN_STATISTICS hint if not already present
+  if not sql:lower():match("gather_plan_statistics") then
+    sql = sql:gsub("^(%s*SELECT)", "%1 /*+ GATHER_PLAN_STATISTICS */", 1)
+  end
+
+  local spool  = vim.fn.tempname() .. ".log"
+  local script = vim.fn.tempname() .. ".sql"
+
+  local f = assert(io.open(script, "w"))
+  f:write("SET ECHO OFF\n")
+  f:write("SET FEEDBACK OFF\n")
+  f:write("SET HEADING OFF\n")
+  f:write("SET LINESIZE 300\n")
+  f:write("SET PAGESIZE 1000\n")
+  f:write("SET TERMOUT OFF\n")
+  f:write(sql .. ";\n")
+  f:write("SET TERMOUT ON\n")
+  f:write("SPOOL " .. spool .. "\n")
+  f:write("SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(FORMAT => 'ALLSTATS LAST'));\n")
   f:write("SPOOL OFF\n")
   f:write("EXIT\n")
   f:close()

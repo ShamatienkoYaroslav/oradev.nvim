@@ -1803,4 +1803,62 @@ function M.fetch_scheduler_programs(conn, callback)
     end)
 end
 
+---Run a paginated SELECT query and return the raw JSON spool content.
+---@param conn     {key: string, is_named: boolean}
+---@param sql      string   the SELECT statement (without OFFSET/FETCH — caller adds pagination)
+---@param callback fun(raw: string|nil, err: string|nil)
+function M.fetch_raw_query(conn, sql, callback)
+  local cfg = require("ora.config").values
+
+  if not sql:match("[;/]%s*$") then sql = sql .. ";" end
+
+  local spool  = vim.fn.tempname() .. ".log"
+  local script = vim.fn.tempname() .. ".sql"
+
+  local f = assert(io.open(script, "w"))
+  f:write("SET ECHO OFF\n")
+  f:write("SET FEEDBACK OFF\n")
+  f:write("SET SQLFORMAT JSON\n")
+  f:write("SPOOL " .. spool .. "\n")
+  f:write(sql .. "\n")
+  f:write("SPOOL OFF\n")
+  f:write("EXIT\n")
+  f:close()
+
+  local args
+  if conn.is_named then
+    args = { cfg.sqlcl_path, "-name", conn.key, "-S", "@" .. script }
+  else
+    args = { cfg.sqlcl_path, conn.key, "-S", "@" .. script }
+  end
+
+  local Job = require("plenary.job")
+  Job:new({
+    command = args[1],
+    args    = vim.list_slice(args, 2),
+    on_exit = function(_, code)
+      os.remove(script)
+
+      local fh = io.open(spool, "r")
+      if not fh then
+        vim.schedule(function()
+          callback(nil, "spool file missing (sqlcl exited with code " .. code .. ")")
+        end)
+        return
+      end
+      local raw = fh:read("*a")
+      fh:close()
+      os.remove(spool)
+
+      vim.schedule(function()
+        if code ~= 0 and vim.trim(raw) == "" then
+          callback(nil, "sqlcl exited with code " .. code)
+          return
+        end
+        callback(raw, nil)
+      end)
+    end,
+  }):start()
+end
+
 return M

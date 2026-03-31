@@ -515,6 +515,150 @@ function M.execute_worksheet_selected()
   end
 end
 
+---Extract SQL from the current buffer: visual selection or full buffer.
+---@param bufnr integer
+---@return string|nil sql
+local function get_worksheet_sql(bufnr)
+  local mode = vim.fn.mode()
+  local sql
+  if mode == "v" or mode == "V" or mode == "\22" then
+    vim.cmd("normal! \27")
+    local start_row = vim.fn.line("'<")
+    local end_row   = vim.fn.line("'>")
+    local sel_lines = vim.api.nvim_buf_get_lines(bufnr, start_row - 1, end_row, false)
+    if mode == "v" then
+      local start_col = vim.fn.col("'<")
+      local end_col   = vim.fn.col("'>")
+      if #sel_lines == 1 then
+        sel_lines[1] = sel_lines[1]:sub(start_col, end_col)
+      else
+        sel_lines[1] = sel_lines[1]:sub(start_col)
+        sel_lines[#sel_lines] = sel_lines[#sel_lines]:sub(1, end_col)
+      end
+    end
+    sql = table.concat(sel_lines, "\n")
+  else
+    sql = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+  end
+  sql = vim.trim(sql)
+  if sql == "" then return nil end
+  return sql
+end
+
+---Show the explain plan for the current worksheet or visual selection.
+function M.explain_worksheet()
+  if not _setup_done then
+    notify.error("ora", "call require('ora').setup({...}) first")
+    return
+  end
+
+  local bufnr   = vim.api.nvim_get_current_buf()
+  local ws_mod  = require("ora.worksheet")
+  local ws      = ws_mod.find(bufnr) or ws_mod.register(bufnr)
+
+  if ws.db_object and ws.db_object.kind ~= "soft" then
+    notify.warn("ora", ws.db_object.type .. " worksheet cannot be explained")
+    return
+  end
+
+  local sql = get_worksheet_sql(bufnr)
+  if not sql then
+    notify.warn("ora", "Worksheet is empty")
+    return
+  end
+
+  local function do_explain()
+    local result = require("ora.result")
+    local nid = "ora_explain"
+    local rbuf = result.get_or_create_buf(ws)
+    result.set_buf_lines(rbuf, { "-- loading explain plan…" })
+    result.show(rbuf)
+
+    notify.progress(nid, "Loading explain plan…")
+
+    result.run_explain(ws, sql, function(raw, err)
+      if err then
+        local out = require("ora.result.error").create({ raw = err })
+        result.display(rbuf, out)
+        notify.error(nid, "Explain plan failed")
+        return
+      end
+
+      local out = require("ora.result.explain").create({ raw = raw })
+      result.display(rbuf, out)
+      notify.done(nid, "Explain plan loaded")
+    end)
+  end
+
+  if ws.connection then
+    do_explain()
+  else
+    require("ora.ui.picker").select(function(conn)
+      if not conn then return end
+      ws.connection = conn
+      ws_mod.refresh_winbar(ws)
+      do_explain()
+    end)
+  end
+end
+
+---Show the actual execution plan for the current worksheet or visual selection.
+function M.execution_plan()
+  if not _setup_done then
+    notify.error("ora", "call require('ora').setup({...}) first")
+    return
+  end
+
+  local bufnr   = vim.api.nvim_get_current_buf()
+  local ws_mod  = require("ora.worksheet")
+  local ws      = ws_mod.find(bufnr) or ws_mod.register(bufnr)
+
+  if ws.db_object and ws.db_object.kind ~= "soft" then
+    notify.warn("ora", ws.db_object.type .. " worksheet cannot show execution plan")
+    return
+  end
+
+  local sql = get_worksheet_sql(bufnr)
+  if not sql then
+    notify.warn("ora", "Worksheet is empty")
+    return
+  end
+
+  local function do_execution()
+    local result = require("ora.result")
+    local nid = "ora_execution"
+    local rbuf = result.get_or_create_buf(ws)
+    result.set_buf_lines(rbuf, { "-- running query and loading execution plan…" })
+    result.show(rbuf)
+
+    notify.progress(nid, "Loading execution plan…")
+
+    result.run_execution(ws, sql, function(raw, err)
+      if err then
+        local out = require("ora.result.error").create({ raw = err })
+        result.display(rbuf, out)
+        notify.error(nid, "Execution plan failed")
+        return
+      end
+
+      local out = require("ora.result.execution").create({ raw = raw })
+      result.display(rbuf, out)
+      notify.done(nid, "Execution plan loaded")
+    end)
+  end
+
+  if ws.connection then
+    do_execution()
+  else
+    require("ora.ui.picker").select(function(conn)
+      if not conn then return end
+      ws.connection = conn
+      ws_mod.refresh_winbar(ws)
+      do_execution()
+    end)
+  end
+end
+
 ---Format the current worksheet SQL using SQLcl's built-in formatter.
 function M.format_worksheet()
   if not _setup_done then

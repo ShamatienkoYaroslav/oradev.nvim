@@ -322,13 +322,17 @@ local function create(data)
     icon    = "󰓫 ",
     icon_hl = "Type",
     lines   = lines,
-    render  = function(_, bufnr)
+    ---@param _ any
+    ---@param bufnr integer
+    ---@param line_offset? integer  number of lines to shift all highlights down by
+    render  = function(_, bufnr, line_offset)
+      local off = line_offset or 0
       setup_hl()
       vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 
       -- Border lines (top, separator, bottom) — full line
       for _, li in ipairs(hl_data.border_lines or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, li, 0, {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, li + off, 0, {
           line_hl_group = "OraResultBorder",
           hl_eol        = true,
           priority      = 50,
@@ -337,7 +341,7 @@ local function create(data)
 
       -- Header row — full line
       for _, li in ipairs(hl_data.header_lines or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, li, 0, {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, li + off, 0, {
           line_hl_group = "OraResultHeader",
           priority      = 100,
         })
@@ -345,7 +349,7 @@ local function create(data)
 
       -- Alternating data rows
       for _, li in ipairs(hl_data.alt_rows or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, li, 0, {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, li + off, 0, {
           line_hl_group = "OraResultRowAlt",
           priority      = 50,
         })
@@ -353,7 +357,7 @@ local function create(data)
 
       -- Border │ characters in header + data rows
       for _, bc in ipairs(hl_data.border_cols or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, bc[1], bc[2], {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, bc[1] + off, bc[2], {
           end_col  = bc[3],
           hl_group = "OraResultBorder",
           priority = 150,
@@ -362,7 +366,7 @@ local function create(data)
 
       -- NULL cells
       for _, nc in ipairs(hl_data.null_cells or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, nc[1], nc[2], {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, nc[1] + off, nc[2], {
           end_col  = nc[3],
           hl_group = "OraResultNull",
           priority = 200,
@@ -371,7 +375,7 @@ local function create(data)
 
       -- Truncation markers (…)
       for _, tc in ipairs(hl_data.trunc_cells or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, tc[1], tc[2], {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, tc[1] + off, tc[2], {
           end_col  = tc[3],
           hl_group = "OraResultTrunc",
           priority = 200,
@@ -380,7 +384,7 @@ local function create(data)
 
       -- Footer lines
       for _, li in ipairs(hl_data.footer_lines or {}) do
-        vim.api.nvim_buf_set_extmark(bufnr, ns, li, 0, {
+        vim.api.nvim_buf_set_extmark(bufnr, ns, li + off, 0, {
           line_hl_group = "OraResultFooter",
           priority      = 50,
         })
