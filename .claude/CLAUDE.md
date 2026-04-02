@@ -26,14 +26,18 @@ Tests use **plenary.nvim** (busted runner). Plenary must be installed at
 
 `plugin/ora.lua` is the auto-loaded entry point. It registers the user commands
 (`OraOpenSqlcl`, `OraConnect`, `OraAddConnection`, `OraWorksheetNew`,
-`OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetExplainPlan`, `OraWorksheetExecutionPlan`, `OraWorksheetFormat`,
+`OraWorksheetRegister`, `OraWorksheetsList`, `OraWorksheetExecute`, `OraWorksheetExplainPlan`, `OraWorksheetExecutionPlan`, `OraWorksheetFormat`,
 `OraWorksheetChangeConnection`, `OraQuickAction`, `OraExplorer`) and guards against double-loading
 with `vim.g.loaded_ora`. It never does any work itself — it delegates to
 `lua/ora/init.lua`.
 
 `lua/ora/init.lua` is the public API module. It owns the `_setup_done` flag that gates
 all other calls. `setup()` delegates to `config.lua`; `list()` delegates to
-`ui/picker.lua`; `connect()` delegates to `connection.lua`.
+`ui/picker.lua`; `connect()` delegates to `connection.lua`. When
+`config.auto_worksheet` is true (default), `setup()` creates a `FileType` autocmd
+for `sql` and `plsql` that auto-registers opened files as worksheets (winbar,
+execute/explain/format ready). Extensions `.pks` and `.pkb` are mapped to the
+`plsql` filetype via `vim.filetype.add`.
 
 `lua/ora/config.lua` holds the single `M.values` table (merged defaults + user config).
 Every other module reads config exclusively through `require("ora.config").values` —
@@ -70,6 +74,14 @@ built on top of the showcase UI. Fetches rows via `schema.fetch_raw_query` in
 pages of 50, renders using `result.query` formatting, and provides `n`/`p`/`f`
 keymaps for next/previous/first page navigation. Called from the explorer's
 "show data" action for tables, views, and materialized views.
+
+`lua/ora/ui/showcase/sessions.lua` is an **active sessions** component
+built on the showcase UI. Queries `V$SESSION` via `schema.fetch_raw_query`,
+renders using `result.query` formatting, and provides `r` (refresh), `d`/`<CR>`
+(show session SQL detail in a floating modal), and `q` (close) keymaps. Called
+from the explorer's connection node "Active sessions" action. The detail modal
+fetches `SQL_FULLTEXT` from `V$SQL` by `SQL_ID` and displays it in a centered
+float with SQL syntax highlighting.
 
 `lua/ora/result/init.lua` is the result **container**: manages the per-worksheet
 result buffer, the belowright split window, and a winbar showing the output type

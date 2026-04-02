@@ -9,6 +9,7 @@ local M = {}
 ---@field sqlcl_path          string                   Path to the sqlcl executable
 ---@field win_width           integer                  Width of the picker floating window (columns)
 ---@field win_height          integer                  Height of the picker floating window (rows)
+---@field auto_worksheet      boolean                  Auto-register sql/plsql/pks/pkb files as worksheets
 ---@field explorer_mappings   table<string, string>    Key → command mappings for the schema explorer
 ---@field lsp?                OraLspConfig             PL/SQL LSP configuration
 
@@ -17,6 +18,7 @@ local defaults = {
   sqlcl_path = "sql",
   win_width  = 60,
   win_height = 20,
+  auto_worksheet = true,
   explorer_mappings = {
     ["<cr>"] = "toggle_node",
     ["l"]    = "expand_node",

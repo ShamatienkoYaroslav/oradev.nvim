@@ -14,10 +14,41 @@ local _setup_done = false
 ---  })
 function M.setup(user_config)
   require("ora.config").setup(user_config)
-  vim.filetype.add({ pattern = { ["ora://.*"] = "plsql" } })
+  vim.filetype.add({
+    extension = { pks = "plsql", pkb = "plsql" },
+    pattern   = { ["ora://.*"] = "plsql" },
+  })
   require("ora.lsp").setup(require("ora.config").values)
   M._setup_icons()
+
+  if require("ora.config").values.auto_worksheet then
+    M._setup_auto_worksheet()
+  end
+
   _setup_done = true
+end
+
+---Set up autocmd to auto-register sql/plsql/pks/pkb files as worksheets.
+function M._setup_auto_worksheet()
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = { "sql", "plsql" },
+    group = vim.api.nvim_create_augroup("OraAutoWorksheet", { clear = true }),
+    callback = function(ev)
+      local bufnr = ev.buf
+      -- Skip ora:// buffers — they are already managed as worksheets.
+      local name = vim.api.nvim_buf_get_name(bufnr)
+      if name:match("^ora://") then return end
+      -- Skip special buffers (terminals, nofile, etc.).
+      local bt = vim.api.nvim_buf_get_option(bufnr, "buftype")
+      if bt ~= "" then return end
+
+      local ws_mod = require("ora.worksheet")
+      if not ws_mod.find(bufnr) then
+        local ws = ws_mod.register(bufnr)
+        ws_mod.refresh_winbar(ws)
+      end
+    end,
+  })
 end
 
 -- Map worksheet icon glyphs to mini.icons highlight groups.
@@ -104,6 +135,31 @@ function M.connect(url)
     return
   end
   require("ora.connection").connect(url, url)
+end
+
+---Convert the current buffer into a worksheet and pick a connection.
+function M.register_worksheet()
+  if not _setup_done then
+    notify.error("ora", "call require('ora').setup({...}) first")
+    return
+  end
+
+  local bufnr  = vim.api.nvim_get_current_buf()
+  local ws_mod = require("ora.worksheet")
+  local ws     = ws_mod.find(bufnr)
+  if ws then
+    notify.warn("ora", "Buffer is already a worksheet")
+    return
+  end
+
+  ws = ws_mod.register(bufnr)
+  ws_mod.refresh_winbar(ws)
+
+  require("ora.ui.picker").select(function(conn)
+    if not conn then return end
+    ws.connection = conn
+    ws_mod.refresh_winbar(ws)
+  end)
 end
 
 ---Create a new SQL worksheet buffer (no connection prompt).

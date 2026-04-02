@@ -25,6 +25,10 @@ vim.api.nvim_create_user_command("OraWorksheetNew", function()
   require("ora").new_worksheet()
 end, { desc = "Create a new SQL worksheet and pick a connection" })
 
+vim.api.nvim_create_user_command("OraWorksheetRegister", function()
+  require("ora").register_worksheet()
+end, { desc = "Convert the current buffer into an Oracle worksheet" })
+
 vim.api.nvim_create_user_command("OraWorksheetExecute", function()
   require("ora").execute_worksheet()
 end, { desc = "Execute the current worksheet buffer against its connection" })

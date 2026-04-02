@@ -28,6 +28,7 @@ A Neovim plugin providing a UI on top of [SQLcl](https://www.oracle.com/database
     { "<leader>oe", "<cmd>OraExplorer<cr>",                  desc = "Toggle Oracle Explorer" },
     { "<leader>os", "<cmd>OraOpenSqlcl<cr>",                 desc = "Open SQLcl" },
     { "<leader>on", "<cmd>OraWorksheetNew<cr>",              desc = "New worksheet" },
+    { "<leader>ob", "<cmd>OraWorksheetRegister<cr>",         desc = "Buffer to worksheet" },
     { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
     { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
     { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
@@ -67,6 +68,11 @@ require("ora").setup({
   win_width  = 60,
   win_height = 20,
 
+  -- Automatically register sql, plsql, pks, and pkb files as worksheets (optional).
+  -- When true, opening any of these file types adds the worksheet winbar and
+  -- enables execute/explain/format commands without running :OraWorksheetRegister first.
+  auto_worksheet = true,  -- default: true
+
   -- Schema explorer key mappings (optional).
   -- These are injected into neo-tree's ora source config automatically.
   -- Override individual keys or set to false to disable a mapping.
@@ -92,6 +98,7 @@ keys = {
   { "<leader>oe", "<cmd>OraExplorer<cr>",                  desc = "Toggle Oracle Explorer" },
   { "<leader>os", "<cmd>OraOpenSqlcl<cr>",           desc = "Open SQLcl" },
   { "<leader>on", "<cmd>OraWorksheetNew<cr>",              desc = "New worksheet" },
+  { "<leader>ob", "<cmd>OraWorksheetRegister<cr>",         desc = "Buffer to worksheet" },
   { "<leader>or", "<cmd>OraWorksheetExecute<cr>",          desc = "Run worksheet" },
   { "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",  desc = "Run selection", mode = "v" },
   { "<leader>of", "<cmd>OraWorksheetFormat<cr>",           desc = "Format worksheet" },
@@ -107,6 +114,7 @@ keys = {
 vim.keymap.set("n", "<leader>oe", "<cmd>OraExplorer<cr>",                    { desc = "Toggle Oracle Explorer" })
 vim.keymap.set("n", "<leader>oc", "<cmd>OraOpenSqlcl<cr>",                   { desc = "List connections" })
 vim.keymap.set("n", "<leader>on", "<cmd>OraWorksheetNew<cr>",                { desc = "New worksheet" })
+vim.keymap.set("n", "<leader>ob", "<cmd>OraWorksheetRegister<cr>",           { desc = "Buffer to worksheet" })
 vim.keymap.set("n", "<leader>or", "<cmd>OraWorksheetExecute<cr>",            { desc = "Run worksheet" })
 vim.keymap.set("v", "<leader>oR", "<cmd>OraWorksheetExecuteSelected<cr>",    { desc = "Run selection" })
 vim.keymap.set("n", "<leader>of", "<cmd>OraWorksheetFormat<cr>",             { desc = "Format worksheet" })
@@ -145,6 +153,7 @@ nvim-ora passes the URL directly to `sqlcl`, so any format sqlcl accepts works:
 | Command                         | Description                                                       |
 | ------------------------------- | ----------------------------------------------------------------- |
 | `:OraWorksheetNew`              | Create a new SQL worksheet buffer                                 |
+| `:OraWorksheetRegister`         | Convert the current buffer into an Oracle worksheet               |
 | `:OraWorksheetExecute`          | Execute the current worksheet and show results in a split         |
 | `:OraWorksheetExplainPlan`          | Show explain plan for the worksheet or visual selection            |
 | `:OraWorksheetExecutionPlan`    | Show actual execution plan with runtime stats                     |

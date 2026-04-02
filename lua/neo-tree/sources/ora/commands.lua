@@ -2502,6 +2502,7 @@ M.show_actions = function(state)
       table.insert(actions, "Disconnect")
     end
     table.insert(actions, "Show connection string")
+    table.insert(actions, "Monitor sessions")
     action_picker(name, actions, function(choice)
       if choice == "Connect" then
         vim.schedule(function()
@@ -2519,6 +2520,8 @@ M.show_actions = function(state)
         ora_source.navigate(state)
       
         notify.done("ora_conn", "Disconnected from " .. name)
+      elseif choice == "Monitor sessions" then
+        require("ora.ui.showcase.sessions").open({ conn_name = name })
       elseif choice == "Show connection string" then
       
         local nid = "ora_connstr"
