@@ -45,3 +45,6 @@
 [X] Add result UI output to show errors
 [X] Add option to execute only selected code or code for a line where the cursor is 
 [X] Add a new command and a connection action to show active sessions
+[ ] Add the real tile SQL Monitor
+[ ] Add support for SQLcl Project
+[ ] Add ability to open spec/body from body/spec (package, type)

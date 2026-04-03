@@ -217,7 +217,7 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 
 | Node type             | Actions                                                                   |
 | --------------------- | ------------------------------------------------------------------------- |
-| Connection            | Connect (if disconnected), Disconnect (if connected), Show conn. string   |
+| Connection            | Connect, Disconnect, Show conn. string, Monitor sessions                  |
 | Table                 | Show DDL, Show data, Drop table                                           |
 | View                  | Show DDL, Show data, Drop view                                            |
 | Materialized View     | Show DDL, Show data, Drop materialized view                               |
@@ -239,6 +239,29 @@ These are the default keymaps. Remap them via `explorer_mappings` in `setup()`.
 | ORDS Parameter        | Define parameter                                                          |
 
 Source code is opened in a new worksheet with the connection pre-set and the filetype set to `plsql`. The winbar shows the schema name, object name, and object type (e.g. `HR.MY_PKG (Package Body)`).
+
+### Monitor Sessions
+
+The **Monitor sessions** action (available on any connection node via `a`) opens a live session monitor powered by `GV$SESSION`. It displays active and inactive database sessions in a bordered table.
+
+#### Monitor keymaps
+
+| Key    | Action                                                                 |
+| ------ | ---------------------------------------------------------------------- |
+| `r`    | Refresh the sessions list                                              |
+| `i`    | Toggle visibility of inactive sessions                                 |
+| `a`    | Show the full SQL text of the session under the cursor                 |
+| `e`    | Show the explain plan for the session's current SQL                    |
+| `w`    | Show session wait events (`V$SESSION_WAIT`: event, P1, P2, P3)        |
+| `s`    | Show server/process info (`V$SESSION` + `V$PROCESS`)                  |
+| `c`    | Show client info (OS user, machine, terminal, client identifier)       |
+| `K`    | Kill session — opens a confirmation dialog with the `ALTER SYSTEM KILL SESSION` statement |
+| `<CR>` | Same as `a` (show active SQL)                                          |
+| `q`    | Close the monitor                                                      |
+
+The **Active SQL** and **Explain Plan** actions open a floating modal. Active SQL reconstructs the full statement from `V$SQLTEXT_WITH_NEWLINES`; Explain Plan runs `EXPLAIN PLAN FOR` and renders `DBMS_XPLAN.DISPLAY` output.
+
+The **Kill Session** action opens a confirmation dialog showing the exact `ALTER SYSTEM KILL SESSION '<sid>, <serial#>, @<inst_id>' IMMEDIATE` statement. Press `a` to apply or `c`/`q`/`<Esc>` to cancel. After a successful kill, the monitor refreshes with inactive sessions visible.
 
 ### Supported object types
 
